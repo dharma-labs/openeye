@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Openeye mark: an eye with the swipe leaving through the top of it.
+  The upper lid is deliberately broken where the arrow exits.
+  Kept inside the adaptive-icon safe zone (centre 66 of 108dp) so no launcher mask crops the arrow.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M26,54 C37,70 46,77 54,77 C62,77 71,70 82,54"
+        android:strokeColor="#C9F24D"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="5.5" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M26,54 C33,43 39,36 45,33.5"
+        android:strokeColor="#C9F24D"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.5" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M63,33.5 C69,36 75,43 82,54"
+        android:strokeColor="#C9F24D"
+        android:strokeLineCap="round"
+        android:strokeWidth="5.5" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,66 L54,29"
+        android:strokeColor="#C9F24D"
+        android:strokeLineCap="round"
+        android:strokeWidth="7" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M42,40 L54,26 L66,40"
+        android:strokeColor="#C9F24D"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="7" />
+</vector>
