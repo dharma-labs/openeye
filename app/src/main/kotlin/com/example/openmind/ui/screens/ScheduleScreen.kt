@@ -172,7 +172,7 @@ fun ScheduleScreen(
                 Spacer(Modifier.height(10.dp))
                 listOf(
                     "schedule beats gentle mode. focus beats everything.",
-                    "needs Accessibility access to close a feed.",
+                    "needs screen access to close a feed.",
                 ).forEach { line ->
                     Row(modifier = Modifier.padding(bottom = 8.dp)) {
                         Text("·", color = Accent, modifier = Modifier.width(14.dp))

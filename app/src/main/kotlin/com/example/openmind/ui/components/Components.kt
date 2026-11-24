@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -475,38 +476,34 @@ fun NavGlyph(type: String, tint: Color, modifier: Modifier = Modifier) {
     }
 }
 /**
- * The Openeye mark: an eye whose pupil is a swipe heading out. Same geometry as the launcher
- * icon, drawn small enough to survive 18dp, so the app and the home screen agree.
+ * The Openeye mark: one solid lens with the way out cut through it as negative space. Same
+ * geometry as the launcher icon, so the app and the home screen agree at 20dp.
  */
 @Composable
 fun EyeMark(
     modifier: Modifier = Modifier.size(24.dp),
     color: Color = Color.Unspecified,
-    stroke: Dp = 1.8.dp,
 ) {
     val markColor = if (color == Color.Unspecified) Accent else color
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
-        val line = stroke.toPx()
-        val eye = Path().apply {
+        val mark = Path().apply {
             moveTo(w * 0.06f, h * 0.50f)
-            cubicTo(w * 0.26f, h * 0.16f, w * 0.74f, h * 0.16f, w * 0.94f, h * 0.50f)
-            cubicTo(w * 0.74f, h * 0.84f, w * 0.26f, h * 0.84f, w * 0.06f, h * 0.50f)
+            cubicTo(w * 0.25f, h * 0.19f, w * 0.75f, h * 0.19f, w * 0.94f, h * 0.50f)
+            cubicTo(w * 0.75f, h * 0.81f, w * 0.25f, h * 0.81f, w * 0.06f, h * 0.50f)
             close()
+            moveTo(w * 0.50f, h * 0.315f)
+            lineTo(w * 0.645f, h * 0.50f)
+            lineTo(w * 0.575f, h * 0.50f)
+            lineTo(w * 0.575f, h * 0.665f)
+            lineTo(w * 0.425f, h * 0.665f)
+            lineTo(w * 0.425f, h * 0.50f)
+            lineTo(w * 0.355f, h * 0.50f)
+            close()
+            fillType = PathFillType.EvenOdd
         }
-        drawPath(eye, color = markColor, style = Stroke(width = line, cap = StrokeCap.Round))
-        val shaft = Path().apply {
-            moveTo(w * 0.5f, h * 0.66f)
-            lineTo(w * 0.5f, h * 0.40f)
-        }
-        drawPath(shaft, color = markColor, style = Stroke(width = line, cap = StrokeCap.Round))
-        val head = Path().apply {
-            moveTo(w * 0.37f, h * 0.52f)
-            lineTo(w * 0.5f, h * 0.38f)
-            lineTo(w * 0.63f, h * 0.52f)
-        }
-        drawPath(head, color = markColor, style = Stroke(width = line, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(mark, color = markColor)
     }
 }
 

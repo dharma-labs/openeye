@@ -154,7 +154,7 @@ fun SettingsScreen(
             OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(4.dp)) {
                 Column {
                     PermissionRow(
-                        title = "Accessibility",
+                        title = "screen access",
                         subtitle = "recognises and closes feed surfaces.",
                         granted = permissions.accessibility,
                         onClick = onOpenAccessibility,
@@ -191,7 +191,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        if (showDisclosure) "hide Accessibility disclosure" else "what can Accessibility see?",
+                        if (showDisclosure) "hide the detail" else "what can it actually see?",
                         style = MaterialTheme.typography.labelMedium,
                         color = Accent,
                         modifier = Modifier.clickable { showDisclosure = !showDisclosure },

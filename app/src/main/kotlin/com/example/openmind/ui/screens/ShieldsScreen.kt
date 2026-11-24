@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.example.openmind.data.BlockMode
 import com.example.openmind.data.PlatformCatalog
 import com.example.openmind.data.Settings
+import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.components.Divider
 import com.example.openmind.ui.components.ModeSelector
 import com.example.openmind.ui.components.Monogram
@@ -50,16 +52,19 @@ import com.example.openmind.ui.theme.TextTertiary
 @Composable
 fun ShieldsScreen(
     settings: Settings,
+    permissions: PermissionState,
     onTogglePlatform: (String, Boolean) -> Unit,
     onSurfaceMode: (String, String, BlockMode) -> Unit,
     onStrictChange: (Boolean) -> Unit,
     onOpenSchedule: () -> Unit,
     onLimitChange: (String, Int) -> Unit,
+    onGrantUsage: () -> Unit,
     onNudgeChange: (Int) -> Unit,
     onLongVideosChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var expanded by rememberSaveable { mutableStateOf<String?>("instagram") }
+    var expanded by rememberSaveable { mutableStateOf<String?>(null) }
+    var showMoreApps by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -110,7 +115,11 @@ fun ShieldsScreen(
         item { SectionLabel("apps") }
         item { Spacer(Modifier.height(10.dp)) }
 
-        PlatformCatalog.all.forEach { platform ->
+        // The three worth shielding out of the box. The rest is opt-in and stays out of the way,
+        // because a stranger should not have to read a list of apps they do not use.
+        val coreApps = setOf(PlatformCatalog.INSTAGRAM, PlatformCatalog.YOUTUBE, PlatformCatalog.FACEBOOK)
+        val shownApps = PlatformCatalog.all.filter { showMoreApps || it.id in coreApps }
+        shownApps.forEach { platform ->
             val config = settings.platforms[platform.id]
             item(key = platform.id) {
                 OMCard(
@@ -138,10 +147,13 @@ fun ShieldsScreen(
                                 Spacer(Modifier.height(2.dp))
                                 Text(
                                     text = if (config?.enabled == true) {
-                                        val shielded = config.surfaces.values.count { it.mode != BlockMode.OFF }
-                                        "shield on - $shielded ${if (shielded == 1) "surface" else "surfaces"} covered"
+                                        val labels = config.surfaces.entries
+                                            .filter { it.value.mode != BlockMode.OFF }
+                                            .mapNotNull { PlatformCatalog.surface(platform.id, it.key)?.label }
+                                        if (labels.isEmpty()) "on - nothing picked yet"
+                                        else "covering ${labels.joinToString(" + ")}"
                                     } else {
-                                        "shield off - this one does nothing"
+                                        "off"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (config?.enabled == true) AccentDim else TextTertiary,
@@ -209,12 +221,22 @@ fun ShieldsScreen(
                                     }
                                 }
                                 Spacer(Modifier.height(10.dp))
-                                Text(
-                                    "one budget per app. usage access is what lets us warn you at 80%.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextTertiary,
-                                )
-                                Spacer(Modifier.height(10.dp))
+                                val limitOn = (config?.dailyLimitMinutes ?: 0) > 0
+                                val needsUsage = limitOn && !permissions.usageAccess
+                                if (needsUsage || !limitOn) {
+                                    Text(
+                                        text = if (needsUsage)
+                                            "limit saved. usage access is off, so it can't count yet - tap to fix."
+                                        else
+                                            "a daily budget needs usage access. picking one asks for it.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (needsUsage) Accent else TextTertiary,
+                                        modifier = if (needsUsage)
+                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onGrantUsage)
+                                        else Modifier.fillMaxWidth(),
+                                    )
+                                    Spacer(Modifier.height(10.dp))
+                                }
                                 Text(
                                     text = when {
                                         config?.enabled != true -> "flip the shield on and these stop being suggestions."
@@ -227,6 +249,28 @@ fun ShieldsScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        if (!showMoreApps) {
+            item { Spacer(Modifier.height(4.dp)) }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { showMoreApps = true }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "tiktok, snapchat",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text("add apps", style = MaterialTheme.typography.labelLarge, color = Accent)
                 }
             }
         }

@@ -210,9 +210,13 @@ fun PlanScreen(
                                 )
                             }
                             Spacer(Modifier.height(10.dp))
-                            Text("when ${plan.trigger}", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Spacer(Modifier.height(4.dp))
-                            Text("then ${plan.action}", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                            Text("when", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                            Spacer(Modifier.height(2.dp))
+                            Text(plan.trigger, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Spacer(Modifier.height(8.dp))
+                            Text("then", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                            Spacer(Modifier.height(2.dp))
+                            Text(plan.action, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
                             Spacer(Modifier.height(12.dp))
                             Box(
                                 modifier = Modifier

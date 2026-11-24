@@ -206,7 +206,7 @@ private fun BlockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                EyeMark(modifier = Modifier.width(20.dp).height(20.dp), color = Accent, stroke = 1.5.dp)
+                EyeMark(modifier = Modifier.width(20.dp).height(20.dp), color = Accent)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "openeye",
@@ -301,13 +301,13 @@ private fun BlockScreen(
                     if (plan != null) {
                         if (contract.stopRuleMinutes > 0) Spacer(Modifier.height(10.dp))
                         Text(
-                            "your plan: when ${plan.trigger}",
+                            "your plan: ${plan.trigger}",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextTertiary,
                         )
                         Spacer(Modifier.height(3.dp))
                         Text(
-                            "then ${plan.action}",
+                            plan.action,
                             style = MaterialTheme.typography.titleMedium,
                             color = AccentDim,
                         )

@@ -6,7 +6,9 @@ Openeye is a local-first Android digital wellbeing app. It hides the addictive s
 short-video apps, counts time and estimated items seen in Reels/Shorts, and talks to you in a
 way that is meant to change behaviour rather than make you feel bad about it.
 
-Version 3.1.0 - the psychology rebuild plus coverage, in-feed reminders and a minimal-text pass.
+Version 4.0.0 - the public-launch cut: a redrawn mark, four tabs instead of five, the per-app
+details folded behind `add apps`, permissions that ask themselves at the right moment, and every
+screen driven on an emulator before it shipped.
 Forked from Openeye 2.3.0 at
 `C:\Users\kumar\.openclaw-autoclaw\workspace\openmind` (that folder is untouched).
 Package id intentionally unchanged: `com.example.openmind`. **Because the id is shared, installing
@@ -134,7 +136,7 @@ tested; screens never contain a hard-coded motivational string.
   are the single source of truth. No sample or fabricated data is ever inserted.
 - Kotlin 2.3.20, Compose BOM 2026.03.01, AGP 9.0.1, minSdk 26, target/compile 37.
 - No INTERNET permission, no backend, no Firebase, no analytics SDK.
-- The 3.1.0 state lives inside the existing `Settings` JSON rather than in new DataStore keys:
+- The 4.0.0 state lives inside the existing `Settings` JSON rather than in new DataStore keys:
   `contract` (stop rule, signed timestamp, why, usual feeling), `plans` (when/then pairs),
   `feelings` (check-ins, capped at 200), `promptCursor` (which interruption line is next),
   `lapseHandledDay`, `planAskedInOnboarding`. Nesting keeps the single-source-of-truth invariant and
@@ -148,7 +150,7 @@ on `promptCursor`, snapshotted in `BlockActivity.onCreate` *before* it advances,
 consecutive block screens can never show the same line - that is the anti-habituation requirement
 expressed as an ordering constraint, and a test guards the rotation.
 
-Screen chrome outside those pools is on the same budget: 3.1.0 cut roughly 370 words of explainer
+Screen chrome outside those pools is on the same budget: 4.0.0 cut roughly 370 words of explainer
 prose out of Today, Plan, Insights, Focus, Schedule, Settings, Onboarding and the block screen down
 to one short line per idea. Nothing mechanical was removed - every control, number, chip and
 disclosure survived, only the sentences around them shrank.
@@ -237,11 +239,13 @@ inherited from an article or a study.
 
 ## Logo
 
-`brand/openeye-icon-1024.png` is the master mark: a lime eye on ink with a swipe arrow breaking up
-through the upper lid - the gesture that defines the problem drawn as the thing that escapes the
-eye. The adaptive launcher layers are `res/drawable/ic_launcher_foreground.xml` (same geometry, kept
-inside the safe zone) and `ic_launcher_background.xml`. `EyeMark` in `ui/components/Components.kt`
-draws the same arrow instead of the old round pupil, so the in-app mark matches the launcher icon.
+`brand/openeye-icon-1024.png` (plus a 512 export) is the master mark: one solid lime lens on ink
+with the swipe arrow knocked out of it as negative space. Nothing else. The earlier version carried a
+stroked outline, a pupil and decorative circles, and all three vanished at launcher size. The adaptive
+layers are `res/drawable/ic_launcher_foreground.xml` (the same single even-odd path, inside the safe
+zone) and `ic_launcher_background.xml` (a flat rect). `EyeMark` in `ui/components/Components.kt` and
+`drawEye` in `ui/SummaryShare.kt` draw identical geometry, so the splash, the nav mark, the block
+screen and the shared card match the icon on the home screen.
 Legacy `mipmap-*/ic_launcher*.webp` files are untouched and unused - minSdk 26 guarantees the
 adaptive icons win on every supported device.
 
@@ -284,32 +288,43 @@ Artifacts:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (signed with the debug key, installable)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
-- `C:\Users\kumar\Downloads\openeye-3.1.0-debug.apk` - the copy handed over for install testing
+- `C:\Users\kumar\Downloads\openeye-4.0.0-debug.apk` - the copy handed over for install testing
 
 ## Verification
 
-What was checked for 3.1.0, in this environment only:
+What was checked for 4.0.0, in this environment only:
 
 - `:app:assembleDebug`, `:app:assembleRelease` -> BUILD SUCCESSFUL.
 - `:app:testDebugUnitTest` -> 54 tests, 0 failures, 0 errors: 14 `RuleEngineTest`, 11 `CoachTest`,
   10 `PlatformCatalogTest`, 6 `AttentionStatsTest`, 6 `VoiceTest`, 5 `TimeTranslationTest`,
-  2 legacy template tests. The new suites guard package-id uniqueness, that every catalog surface is
-  actually detectable, that TikTok's Home tab can never be covered, settings merging on upgrade, and
-  the nudge copy (rotation, exactly-two-slots, banned vocabulary).
-- `:app:lintDebug` -> 0 errors, 56 warnings (inherited Compose/`performClick` advisory noise).
-- Manifest: label Openeye, version 3.1.0 (code 9), minSdk 26, target 37, no INTERNET, no
+  2 legacy template tests.
+- `:app:lintDebug` -> 0 errors.
+- Manifest: label Openeye, version 4.0.0 (code 10), minSdk 26, target 37, no INTERNET, no
   SYSTEM_ALERT_WINDOW. Accessibility config: window/content/scroll events, no package allowlist.
-- Artifacts: debug 13.5 MB installable, release 1.5 MB R8 + resource-shrunk (unsigned).
-- The fork built clean at 2.3.0 **before** any psychology-rebuild edit, so every later failure is
-  attributable to this change set.
+- **Driven on an API 36 emulator (`medium_phone`, x86_64, headless) with the real APK installed.**
+  First run from a clean `pm clear`: splash with the credit, onboarding, the accessibility deep
+  link, the system toggle, back into the app, which re-read the grant and flipped the card to `on`
+  without a restart. Notification permission is requested at launch on 13+.
+  Every tab and overlay was tapped: today, shields (3 core apps, `add apps` reveals TikTok and
+  Snapchat, row expansion, per-surface strict/gentle/off, daily-limit chips, reminder chips,
+  long-videos switch), focus (start, live countdown, stop, custom +/- picker), numbers (day/week/
+  30-day ranges, the screen-time request that lands on the real system page), plans (add, arm,
+  park), quiet hours (routine presets, day toggles, time picker, strict/gentle mode), settings
+  (theme chips, disclosure, share sheet, all three permissions reading `allowed`), in light and dark.
+- Against a real third-party app: YouTube launched, Openeye's HUD pill drew over it, the Shorts tab
+  was covered and its taps swallowed, and the strict block screen fired with the stop rule and the
+  armed plan quoted back. `close it` dropped out of YouTube. Screen time then appeared on Today and
+  in Numbers with real UsageStats minutes.
+- Two defects only a running app could show, both fixed here: `POST_NOTIFICATIONS` was never
+  requested, and the feed HUD stayed painted over Openeye's own screens when you came back from
+  YouTube.
 
-Not verified for 3.1.0: nothing in this change set has run on a device or emulator. The blocking
-engine itself was last exercised at 2.3.0 on an Android 36 emulator (light and dark themes), where
-Reels/Explore nav items were visually covered and touch-blocked on a fake Instagram harness, the HUD
-advanced on a real swipe, and the block screen, focus notification, summary PNG and share sheet all
-worked. **The Facebook, Facebook Lite, TikTok and Snapchat selectors, the in-feed reminder popup and
-the R8-shrunk release are unproven until someone installs the APK.** Treat the new screens and the
-redrawn launcher mark the same way.
+Not verified: no physical device, so OEM accessibility implementations (Xiaomi/Samsung/Huawei kill
+background overlays and rename the accessibility entry) are still unproven. Facebook, Facebook Lite,
+TikTok and Snapchat were never installed here, so their selectors remain catalog guesses. The
+release APK is unsigned and its R8 output has never run, so minification is unproven. A real Shorts
+or Reels feed could not be opened on this emulator image (YouTube refuses to run until updated), so
+the in-feed reminder popup was verified through the HUD and the block screen, not through a clip.
 
 ## Known limitations
 
@@ -328,7 +343,7 @@ redrawn launcher mark the same way.
   foreground, not as a system-level app lock.
 - Hourly buckets use the flush hour; sessions crossing an hour boundary are attributed there.
 - Focus sessions do not yet support pause/resume or a stored history.
-- Every 3.1.0 mechanic that beats plain monitoring - the quoted stop rule, "over your Nm" in the
+- Every 4.0.0 mechanic that beats plain monitoring - the quoted stop rule, "over your Nm" in the
   HUD, the plan echo on the block screen - is inert until you sign a contract. Without one the app
   falls back to rotating reminders, which is the weakest thing it can do.
 - Feeling and lapse state are per-day heuristics from local check-ins, not a clinical signal. The
@@ -348,7 +363,7 @@ redrawn launcher mark the same way.
 3. Weekly report and a home-screen widget.
 4. Optional encrypted export and biometric lock.
 5. Permanent production application id with a documented migration.
-6. Install the 3.1.0 APK on a real phone and read the new copy out loud - twelve-word lines that
+6. Install the 4.0.0 APK on a real phone and read the new copy out loud - twelve-word lines that
    work on paper are the ones that need cutting, and the rotation only proves itself over a week.
 
 Built with Care, Openeye by Dharmendra.

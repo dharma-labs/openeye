@@ -1,9 +1,14 @@
 package com.example.openmind
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -19,9 +24,20 @@ import com.example.openmind.ui.AppViewModel
 import com.example.openmind.ui.theme.OpenEyeTheme
 
 class MainActivity : ComponentActivity() {
+
+    /** Focus and limit warnings are notifications, and on 13+ they are silently dead until asked. */
+    private val askNotifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             val viewModel: AppViewModel = viewModel()
             val settings by viewModel.settings.collectAsStateWithLifecycle()

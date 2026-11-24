@@ -26,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -43,7 +44,6 @@ import com.example.openmind.domain.TimeTranslation
 import com.example.openmind.domain.Voice
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.SummaryShare
-import com.example.openmind.ui.components.ActionCard
 import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.HourlyChart
 import com.example.openmind.ui.components.MiniMetric
@@ -104,7 +104,7 @@ fun TodayScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                EyeMark(modifier = Modifier.size(20.dp), color = Accent, stroke = 1.6.dp)
+                EyeMark(modifier = Modifier.size(20.dp), color = Accent)
                 Spacer(Modifier.width(9.dp))
                 Text(
                     "openeye",
@@ -124,44 +124,46 @@ fun TodayScreen(
                         color = AccentDim,
                     )
                 }
-                Spacer(Modifier.width(12.dp))
-                NavGlyph(
-                    type = "settings",
-                    tint = TextSecondary,
+                Spacer(Modifier.width(4.dp))
+                Box(
                     modifier = Modifier
-                        .size(22.dp)
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onOpenSettings),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    NavGlyph(type = "settings", tint = TextSecondary, modifier = Modifier.size(22.dp))
+                }
             }
         }
         item { Spacer(Modifier.height(22.dp)) }
         item {
             Text(openingLine(), style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "what the phone did today.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
         }
         if (!permissions.accessibility) {
             item { Spacer(Modifier.height(16.dp)) }
             item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(16.dp)) {
+                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
                     Column {
                         Text(
-                            "guard's off. nothing's being counted.",
+                            "one switch to start",
                             style = MaterialTheme.typography.titleMedium,
                             color = TextPrimary,
                         )
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
-                            "screen access is how it knows a feed is open.",
+                            "it's how the app knows a feed is open. nothing leaves this phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "in the list: openeye -> use openeye's service.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextTertiary,
                         )
-                        Spacer(Modifier.height(12.dp))
-                        PrimaryButton(text = "switch it on", onClick = onEnableAccessibility)
+                        Spacer(Modifier.height(14.dp))
+                        PrimaryButton(text = "open the switch", onClick = onEnableAccessibility)
                     }
                 }
             }
@@ -221,16 +223,30 @@ fun TodayScreen(
         item {
             FeelingCard(checkedInToday = checkedInToday, reveal = reveal, onPick = onLogFeeling)
         }
-        item { Spacer(Modifier.height(10.dp)) }
+        item { Spacer(Modifier.height(14.dp)) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionCard("focus", onOpenFocus, Modifier.weight(1f), emphasized = true)
-                ActionCard("plans", onOpenPlan, Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionCard("shields", onOpenShields, Modifier.weight(1f))
-                ActionCard("numbers", onOpenInsights, Modifier.weight(1f))
+            val armed = settings.plans.count { it.enabled }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable(onClick = onOpenPlan)
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "if-then plans",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (armed == 0) "make one" else "$armed armed",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextTertiary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("→", style = MaterialTheme.typography.titleMedium, color = Accent)
             }
         }
         item { Spacer(Modifier.height(16.dp)) }

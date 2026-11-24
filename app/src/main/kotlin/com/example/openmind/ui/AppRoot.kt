@@ -76,7 +76,6 @@ private data class NavItem(val key: String, val label: String, val glyph: String
 
 private val navItems = listOf(
     NavItem("today", "today", "today"),
-    NavItem("plans", "plans", "plans"),
     NavItem("shields", "shields", "shields"),
     NavItem("focus", "focus", "focus"),
     NavItem("numbers", "numbers", "insights"),
@@ -142,40 +141,57 @@ fun AppRoot(viewModel: AppViewModel) {
         var overlay by rememberSaveable { mutableStateOf<String?>(null) }
         BackHandler(enabled = overlay != null) { overlay = null }
 
-        when (overlay) {
-            "schedule" -> ScheduleScreen(
-                settings = settings,
-                onBack = { overlay = null },
-                onUpdate = viewModel::updateSchedule,
-            )
-            "settings" -> SettingsScreen(
-                settings = settings,
-                events = events,
-                permissions = permissions,
-                onMaster = viewModel::setMaster,
-                onStrict = viewModel::setStrict,
-                onThemeMode = viewModel::setThemeMode,
-                onTracking = viewModel::setTrackingEnabled,
-                onOpenAccessibility = { AppViewModel.openAccessibilitySettings(context) },
-                onOpenUsage = { AppViewModel.openUsageSettings(context) },
-                onOpenNotifications = { AppViewModel.openNotificationSettings(context) },
-                onExport = { viewModel.exportText() },
-                onClear = viewModel::clearAll,
-                onShowOnboarding = { overlay = "onboarding" },
-                onOpenShields = { overlay = null; tab = "shields" },
-                onBack = { overlay = null },
-            )
-            "onboarding" -> OnboardingScreen(
-                permissions = permissions,
-                contract = settings.contract,
-                onSetStopRule = { minutes -> viewModel.signContract(minutes) },
-                onSetUsualFeeling = viewModel::setUsualFeeling,
-                onEnableAccessibility = { AppViewModel.openAccessibilitySettings(context) },
-                onEnableUsage = { AppViewModel.openUsageSettings(context) },
-                onEnableNotifications = { AppViewModel.openNotificationSettings(context) },
-                onFinish = { viewModel.completeOnboarding(); overlay = null },
-            )
-            else -> Column(
+        if (overlay != null) {
+            Column(
+                modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+            ) {
+                when (overlay) {
+                    "plans" -> PlanScreen(
+                        contract = settings.contract,
+                        plans = settings.plans,
+                        todayMillis = todayFeedMillis,
+                        onSetRule = { minutes -> viewModel.signContract(minutes) },
+                        onAddPlan = viewModel::addPlan,
+                        onRemovePlan = viewModel::removePlan,
+                        onTogglePlan = viewModel::setPlanEnabled,
+                        onBack = { overlay = null },
+                    )
+                    "schedule" -> ScheduleScreen(
+                        settings = settings,
+                        onBack = { overlay = null },
+                        onUpdate = viewModel::updateSchedule,
+                    )
+                    "settings" -> SettingsScreen(
+                        settings = settings,
+                        events = events,
+                        permissions = permissions,
+                        onMaster = viewModel::setMaster,
+                        onStrict = viewModel::setStrict,
+                        onThemeMode = viewModel::setThemeMode,
+                        onTracking = viewModel::setTrackingEnabled,
+                        onOpenAccessibility = { AppViewModel.openAccessibilitySettings(context) },
+                        onOpenUsage = { AppViewModel.openUsageSettings(context) },
+                        onOpenNotifications = { AppViewModel.openNotificationSettings(context) },
+                        onExport = { viewModel.exportText() },
+                        onClear = viewModel::clearAll,
+                        onShowOnboarding = { overlay = "onboarding" },
+                        onOpenShields = { overlay = null; tab = "shields" },
+                        onBack = { overlay = null },
+                    )
+                    "onboarding" -> OnboardingScreen(
+                        permissions = permissions,
+                        contract = settings.contract,
+                        onSetStopRule = { minutes -> viewModel.signContract(minutes) },
+                        onSetUsualFeeling = viewModel::setUsualFeeling,
+                        onEnableAccessibility = { AppViewModel.openAccessibilitySettings(context) },
+                        onEnableUsage = { AppViewModel.openUsageSettings(context) },
+                        onEnableNotifications = { AppViewModel.openNotificationSettings(context) },
+                        onFinish = { viewModel.completeOnboarding(); overlay = null },
+                    )
+                }
+            }
+        } else {
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding()
@@ -194,7 +210,7 @@ fun AppRoot(viewModel: AppViewModel) {
                                 onOpenSchedule = { overlay = "schedule" },
                                 onOpenSettings = { overlay = "settings" },
                                 onOpenInsights = { tab = "numbers" },
-                                onOpenPlan = { tab = "plans" },
+                                onOpenPlan = { overlay = "plans" },
                                 onEnableAccessibility = { AppViewModel.openAccessibilitySettings(context) },
                                 onLogFeeling = { feeling -> viewModel.logFeeling(feeling, todayFeedMillis, "today") },
                                 onDismissLapse = { viewModel.markLapseHandled(LocalDate.now().toEpochDay()) },
@@ -203,15 +219,6 @@ fun AppRoot(viewModel: AppViewModel) {
                                     tab = "focus"
                                 },
                             )
-                            "plans" -> PlanScreen(
-                                contract = settings.contract,
-                                plans = settings.plans,
-                                todayMillis = todayFeedMillis,
-                                onSetRule = { minutes -> viewModel.signContract(minutes) },
-                                onAddPlan = viewModel::addPlan,
-                                onRemovePlan = viewModel::removePlan,
-                                onTogglePlan = viewModel::setPlanEnabled,
-                            )
                             "numbers" -> InsightsScreen(
                                 settings = settings,
                                 events = events,
@@ -219,15 +226,22 @@ fun AppRoot(viewModel: AppViewModel) {
                                 usage = usage,
                                 onGrantUsage = { AppViewModel.openUsageSettings(context) },
                                 onRefresh = viewModel::refreshUsage,
-                                onOpenPlan = { tab = "plans" },
+                                onOpenPlan = { overlay = "plans" },
                             )
                             "shields" -> ShieldsScreen(
                                 settings = settings,
+                                permissions = permissions,
                                 onTogglePlatform = viewModel::setPlatformEnabled,
                                 onSurfaceMode = viewModel::setSurfaceMode,
                                 onStrictChange = viewModel::setStrict,
                                 onOpenSchedule = { overlay = "schedule" },
-                                onLimitChange = viewModel::setDailyLimit,
+                                onLimitChange = { id, minutes ->
+                                    viewModel.setDailyLimit(id, minutes)
+                                    if (minutes > 0 && !permissions.usageAccess) {
+                                        AppViewModel.openUsageSettings(context)
+                                    }
+                                },
+                                onGrantUsage = { AppViewModel.openUsageSettings(context) },
                                 onNudgeChange = viewModel::setNudgeMinutes,
                                 onLongVideosChange = viewModel::setCountLongVideos,
                                 onOpenSettings = { overlay = "settings" },
@@ -318,7 +332,7 @@ private fun Splash() {
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.alpha(enter.value),
         ) {
-            EyeMark(modifier = Modifier.size(84.dp), color = Accent, stroke = 2.6.dp)
+            EyeMark(modifier = Modifier.size(84.dp), color = Accent)
             Spacer(Modifier.height(22.dp))
             Text("openeye", style = MaterialTheme.typography.displayMedium, color = TextPrimary)
             Spacer(Modifier.height(36.dp))

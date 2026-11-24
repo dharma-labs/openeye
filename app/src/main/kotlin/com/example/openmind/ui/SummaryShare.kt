@@ -163,37 +163,26 @@ object SummaryShare {
     private fun drawEye(canvas: Canvas, x: Float, y: Float, size: Float) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor(ACCENT)
-            style = Paint.Style.STROKE
-            strokeWidth = 5f
-            strokeCap = Paint.Cap.ROUND
+            style = Paint.Style.FILL
         }
-        val eye = Path().apply {
-            moveTo(x - size / 2f, y)
-            cubicTo(
-                x - size / 4f, y - size * 0.46f,
-                x + size / 4f, y - size * 0.46f,
-                x + size / 2f, y,
-            )
-            cubicTo(
-                x + size / 4f, y + size * 0.46f,
-                x - size / 4f, y + size * 0.46f,
-                x - size / 2f, y,
-            )
+        // Same negative-space mark as the launcher icon: one lens, the exit cut out of it.
+        val s = size / 0.88f
+        val mark = Path().apply {
+            moveTo(x - 0.44f * s, y)
+            cubicTo(x - 0.25f * s, y - 0.31f * s, x + 0.25f * s, y - 0.31f * s, x + 0.44f * s, y)
+            cubicTo(x + 0.25f * s, y + 0.31f * s, x - 0.25f * s, y + 0.31f * s, x - 0.44f * s, y)
             close()
+            moveTo(x, y - 0.185f * s)
+            lineTo(x + 0.145f * s, y)
+            lineTo(x + 0.075f * s, y)
+            lineTo(x + 0.075f * s, y + 0.165f * s)
+            lineTo(x - 0.075f * s, y + 0.165f * s)
+            lineTo(x - 0.075f * s, y)
+            lineTo(x - 0.145f * s, y)
+            close()
+            fillType = Path.FillType.EVEN_ODD
         }
-        canvas.drawPath(eye, paint)
-        val shaft = Path().apply {
-            moveTo(x, y + size * 0.17f)
-            lineTo(x, y - size * 0.13f)
-        }
-        canvas.drawPath(shaft, paint)
-        val head = Path().apply {
-            moveTo(x - size * 0.12f, y - size * 0.01f)
-            lineTo(x, y - size * 0.13f)
-            lineTo(x + size * 0.12f, y - size * 0.01f)
-        }
-        paint.strokeJoin = Paint.Join.ROUND
-        canvas.drawPath(head, paint)
+        canvas.drawPath(mark, paint)
     }
 
     private fun textPaint(

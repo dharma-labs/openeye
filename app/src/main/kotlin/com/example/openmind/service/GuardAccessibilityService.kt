@@ -128,15 +128,19 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // Our own overlay windows emit events. Ignore them, except when the block screen opens.
         if (pkg == packageName) {
-            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-                event.className?.toString()?.contains("BlockActivity") == true
-            ) {
-                if (::tracker.isInitialized) tracker.leave()
-                foregroundPlatform = null
-                stopTicker()
-                if (::hud.isInitialized) hud.hide()
-                if (::nudge.isInitialized) nudge.removeNow()
-                if (::overlays.isInitialized) overlays.clear()
+            val cls = event.className?.toString().orEmpty()
+            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                if (cls.contains("BlockActivity")) {
+                    if (::tracker.isInitialized) tracker.leave()
+                    foregroundPlatform = null
+                    stopTicker()
+                    if (::hud.isInitialized) hud.hide()
+                    if (::nudge.isInitialized) nudge.removeNow()
+                    if (::overlays.isInitialized) overlays.clear()
+                }
+                // Coming back to our own screens is leaving the feed. Without this the HUD from
+                // YouTube stays painted over the app, which reads as a stuck overlay.
+                if (cls.contains("MainActivity")) leaveTargetApp()
             }
             return
         }

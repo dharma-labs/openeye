@@ -103,7 +103,7 @@ fun OnboardingScreen(
                             .background(SurfaceOne, CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
-                        EyeMark(modifier = Modifier.size(38.dp), color = Accent, stroke = 2.0.dp)
+                        EyeMark(modifier = Modifier.size(38.dp), color = Accent)
                     }
                     Spacer(Modifier.height(28.dp))
                     Text(
@@ -131,7 +131,7 @@ fun OnboardingScreen(
                     }
                 }
 
-                1 -> {
+                2 -> {
                     Text(
                         "two questions, while you're\ncalm about it.",
                         style = MaterialTheme.typography.headlineLarge,
@@ -195,7 +195,7 @@ fun OnboardingScreen(
                     )
                 }
 
-                2 -> {
+                1 -> {
                     Text("one switch does it.", style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -207,6 +207,7 @@ fun OnboardingScreen(
                     PermissionCard(
                         title = "screen access",
                         body = "sees when a reels or shorts screen is open, then covers it. never reads what you type.",
+                        hint = "android settings -> accessibility -> installed apps -> openeye -> use openeye's service",
                         granted = permissions.accessibility,
                         action = "allow",
                         onClick = onEnableAccessibility,
@@ -221,7 +222,8 @@ fun OnboardingScreen(
                     )
                     Spacer(Modifier.height(18.dp))
                     Text(
-                        "no internet permission. that's the build, not a setting.",
+                        if (permissions.accessibility) "it's on. counts start the next time you open a feed."
+                        else "no internet permission. that's the build, not a setting.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                     )
@@ -231,7 +233,7 @@ fun OnboardingScreen(
                     Text("you're set.", style = MaterialTheme.typography.displayLarge, color = TextPrimary)
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "instagram reels, explore and youtube shorts are covered. facebook and tiktok are in shields.",
+                        "instagram, youtube and facebook are already shielded. add tiktok or snapchat any time from shields.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = TextSecondary,
                     )
@@ -267,15 +269,11 @@ fun OnboardingScreen(
             Spacer(Modifier.height(32.dp))
             when (step) {
                 0 -> PrimaryButton(text = "continue", onClick = { step = 1 })
-                1 -> {
-                    PrimaryButton(text = "continue", onClick = { step = 2 })
-                    Spacer(Modifier.height(8.dp))
-                    GhostButton(text = "i'll decide later", onClick = { step = 2 })
-                }
+                1 -> PrimaryButton(text = "continue", onClick = { step = 2 })
                 2 -> {
                     PrimaryButton(text = "continue", onClick = { step = 3 })
                     Spacer(Modifier.height(8.dp))
-                    GhostButton(text = "not now", onClick = { step = 3 })
+                    GhostButton(text = "i'll decide later", onClick = { step = 3 })
                 }
                 else -> PrimaryButton(text = "open openeye", onClick = onFinish)
             }
@@ -321,6 +319,7 @@ private fun PermissionCard(
     body: String,
     granted: Boolean,
     action: String,
+    hint: String? = null,
     onClick: () -> Unit,
 ) {
     OMCard(
@@ -338,6 +337,10 @@ private fun PermissionCard(
             }
             Spacer(Modifier.height(6.dp))
             Text(body, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+            if (hint != null && !granted) {
+                Spacer(Modifier.height(4.dp))
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = TextTertiary)
+            }
         }
     }
 }
