@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.example.openmind.BuildConfig
 import com.example.openmind.MainActivity
 import com.example.openmind.R
@@ -70,11 +71,12 @@ class GuardAccessibilityService : AccessibilityService() {
     private var hudDay = -1L
     private var hudCount = 0
     private var hudMillis = 0L
-    private var nudgeAt = 0L
+    private var nudgeAtMillis = 0L
     private var nudgeCursor = 0
     private var screenMinutes = 0
     private var screenMinutesAt = 0L
     private var screenMinutesPlatform: String? = null
+    private var focusLostAt = 0L
     private val lastBlockAt = mutableMapOf<String, Long>()
     private val lastLimitCheckAt = mutableMapOf<String, Long>()
     private val lastLimitBlockAt = mutableMapOf<String, Long>()
@@ -85,12 +87,101 @@ class GuardAccessibilityService : AccessibilityService() {
     private val ticker = object : Runnable {
         override fun run() {
             if (!tickerRunning) return
-            tracker.tick()
-            refreshHud()
-            maybeNudge()
-            handler.postDelayed(this, 1_000L)
+            if (foregroundPlatform == null || feedStillOwnsTheScreen()) {
+                if (tracker.active) {
+                    verifySurface()
+                    if (tracker.active) tracker.tick()
+                }
+                refreshHud()
+                maybeNudge()
+            }
+            if (tickerRunning) handler.postDelayed(this, TICK_MS)
         }
     }
+
+    /**
+     * Once a second, confirm the shielded app is still the window on screen.
+     *
+     * A clip can play for a minute without the app emitting a single accessibility event, and an app
+     * switch sometimes emits none that reaches us either. Asking the window manager instead of
+     * waiting for an event is what lets continuous watching stay one continuous session - and what
+     * takes the counter off the screen the moment something else is in front.
+     */
+    private fun feedStillOwnsTheScreen(): Boolean {
+        val platform = foregroundPlatform ?: run { focusLostAt = 0L; return true }
+        // A feed can be entered without a window-state event reaching us - resuming from our own
+        // block screen does exactly that. Deriving the package from the platform keeps the counter
+        // alive instead of freezing on a stale focus reading.
+        val pkg = currentPackage ?: PlatformCatalog.packages.entries
+            .firstOrNull { it.value == platform }?.key ?: run { focusLostAt = 0L; return true }
+        val power = getSystemService(PowerManager::class.java)
+        if (power != null && !power.isInteractive) {
+            leaveTargetApp()
+            return false
+        }
+        val owner = foregroundWindowPackage()
+        if (owner == null || owner == pkg) {
+            focusLostAt = 0L
+            return true
+        }
+        hud.hide()
+        nudge.removeNow()
+        overlays.clear()
+        val now = SystemClock.elapsedRealtime()
+        if (focusLostAt == 0L) focusLostAt = now
+        if (now - focusLostAt < FOCUS_LOST_MS) return false
+        if (tracker.active) {
+            // Close the session but keep it resumable: the seconds another window borrowed are not
+            // counted as watching, and if the feed takes the screen back the numbers continue.
+            tracker.leave()
+            return false
+        }
+        if (tracker.holdOpen(now)) return false
+        leaveTargetApp()
+        return false
+    }
+
+    /**
+     * Once a second, ask the window tree which screen is actually up.
+     *
+     * Reaching the home feed by pressing Back can leave the app with no further events to evaluate,
+     * and the session would go on counting minutes the user never spent in a clip feed. The tree is
+     * the only witness when the app has gone quiet.
+     */
+    private fun verifySurface() {
+        val platformId = foregroundPlatform ?: return
+        val pkg = currentPackage ?: return
+        val root = activeRootFor(pkg, null) ?: return
+        val now = System.currentTimeMillis()
+        val nodes = collectNodes(root)
+        val pager = hasClipPager(nodes)
+        val surfaceId = detectSurface(platformId, null, nodes, pager)
+        if (surfaceId != null) {
+            lastSurfaceId = surfaceId
+            lastSurfaceSeen = now
+            return
+        }
+        if (feedClosed(pkg, nodes, pager, now)) {
+            if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "leave surface (tick)")
+            tracker.leave()
+            lastSurfaceId = null
+        }
+    }
+
+    /**
+     * The package owning the screen, ignoring system panels.
+     *
+     * The volume slider, the shade and the screen-recorder dot are windows too, but they are never
+     * an application window and never own the screen. Treating one of them as the foreground is what
+     * made a volume key look like leaving the app and restarted the counter. Null means the query
+     * itself failed, which is treated as "still there": losing a session on an OEM quirk would be
+     * worse than the second it costs.
+     */
+    private fun foregroundWindowPackage(): String? = runCatching {
+        val apps = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        val window = apps.firstOrNull { it.isActive || it.isFocused } ?: apps.maxByOrNull { it.layer }
+        window?.root?.packageName?.toString()
+    }.getOrNull()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -98,7 +189,18 @@ class GuardAccessibilityService : AccessibilityService() {
         overlays = HidingOverlayController(this, getSystemService(WindowManager::class.java))
         hud = WatchHudController(this, getSystemService(WindowManager::class.java))
         nudge = WatchNudgeController(this, getSystemService(WindowManager::class.java))
-        tracker = WatchSessionTracker(AppRepository.get(this))
+        tracker = WatchSessionTracker { slice ->
+            AppRepository.get(this).addWatch(
+                platformId = slice.platformId,
+                surfaceId = slice.surfaceId,
+                count = slice.count,
+                millis = slice.millis,
+                sessions = slice.sessions,
+                longestSessionMs = slice.longestSessionMs,
+                touches = slice.touches,
+                hour = slice.hour,
+            )
+        }
         usageRepository = UsageStatsRepository(this)
     }
 
@@ -117,8 +219,14 @@ class GuardAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * The system asks for an interrupt when its own event queue backs up - a volume-key burst does
+     * that. It plays no part in what we measure, and tearing the session down here is what made the
+     * counter vanish and start again while the feed was still on screen. We generate no sound, so
+     * there is nothing to stop.
+     */
     override fun onInterrupt() {
-        leaveTargetApp()
+        if (BuildConfig.DEBUG) Log.d("OpeneyeFocus", "interrupt ignored")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -146,13 +254,26 @@ class GuardAccessibilityService : AccessibilityService() {
         }
 
         if (pkg !in PlatformCatalog.packages) {
-            // Content changes from the keyboard or system UI must not tear down a live overlay.
-            // Only a real window-state change means another app took the foreground.
-            if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) leaveTargetApp()
+            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+            if (foregroundPlatform == null) return
+            // A panel painted over the feed - the volume HUD, the shade, the screen-recorder dot -
+            // reports a window change without owning the screen. Ending the session here is what
+            // made the counter restart on every volume key.
+            val owner = foregroundWindowPackage()
+            if (owner == null || owner == currentPackage) return
+            // Something else owns the window now. Take our layers off it at once; the 1 s check
+            // decides whether the session is really over or this was only a transition.
+            hud.hide()
+            nudge.removeNow()
+            overlays.clear()
+            if (focusLostAt == 0L) focusLostAt = SystemClock.elapsedRealtime()
             return
         }
 
         val platformId = PlatformCatalog.packages[pkg] ?: return
+        // Events keep arriving from an app that is playing in the background, so coming back is
+        // proved by the window rather than by the arrival of an event.
+        if (focusLostAt != 0L && foregroundWindowPackage() == pkg) focusLostAt = 0L
         if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             currentPackage = pkg
             currentActivityClass = event.className?.toString()
@@ -162,11 +283,9 @@ class GuardAccessibilityService : AccessibilityService() {
         startTicker()
 
         val now = System.currentTimeMillis()
-        // Count taps before throttling so quick taps are not dropped.
-        if ((type == AccessibilityEvent.TYPE_VIEW_CLICKED ||
-                type == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) &&
-            now - lastSurfaceSeen < SURFACE_GRACE_MS
-        ) {
+        // Count taps before throttling so quick taps are not dropped. The tracker ignores them
+        // outside a live session, so no grace window is needed here.
+        if (type == AccessibilityEvent.TYPE_VIEW_CLICKED || type == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) {
             tracker.noteTouch()
         }
         val windowChange = type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -184,6 +303,8 @@ class GuardAccessibilityService : AccessibilityService() {
         if (!settings.masterEnabled) {
             overlays.clear()
             tracker.leave()
+            // Switching the shield off must not leave a session open to be resumed a moment later.
+            tracker.clearHold()
             foregroundPlatform = null
             stopTicker()
             hud.hide()
@@ -193,11 +314,19 @@ class GuardAccessibilityService : AccessibilityService() {
 
         if (!settings.trackingEnabled) {
             tracker.leave()
+            tracker.clearHold()
             stopTicker()
             hud.hide()
         }
 
-        val root = activeRootFor(pkg) ?: return
+        val root = activeRootFor(pkg, event.source)
+        if (root == null) {
+            // No tree means nothing to measure this frame. Keep the session: on devices where an
+            // overlay or the launcher answers for the active window, aborting here stopped the
+            // counter from ever moving. The 1 s focus check closes it if the app really is gone.
+            refreshHud()
+            return
+        }
 
         val nodes = collectNodes(root)
         val hideTargets = buildHideTargets(platformId, settings, nodes)
@@ -212,33 +341,54 @@ class GuardAccessibilityService : AccessibilityService() {
 
         if (enforceDailyLimit(platformId, settings, now)) return
 
-        val surfaceId = detectSurface(platformId, event, nodes)
+        val pager = hasClipPager(nodes)
+        val surfaceId = detectSurface(platformId, event, nodes, pager)
         if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "detect class=$currentActivityClass event=${event.className} -> $surfaceId")
         if (surfaceId != null) {
             lastSurfaceId = surfaceId
             lastSurfaceSeen = now
             tracker.enter(platformId, surfaceId)
+        } else if (tracker.active && lastSurfaceId != null && feedClosed(pkg, nodes, pager, now)) {
+            if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "leave surface")
+            tracker.leave()
+            lastSurfaceId = null
         }
-        val activeSurface = surfaceId
-            ?: lastSurfaceId?.takeIf { now - lastSurfaceSeen < SURFACE_GRACE_MS }
 
-        // Comments sheets contain an editable field; never count their scrolling as feed paging.
-        if (activeSurface != null && tracker.active && !hasEditableNode(nodes)) {
+        val activeSurface = surfaceId ?: lastSurfaceId?.takeIf { tracker.active }
+
+        // While the keyboard is up the visible sheet is comments, not the feed: its scrolling must
+        // not be counted as paging.
+        if (activeSurface != null && tracker.active && !imeVisible()) {
             if (type == AccessibilityEvent.TYPE_VIEW_SCROLLED && isPagerScroll(event)) {
                 tracker.noteScroll()
             }
             maybeCountContentChange(activeSurface, nodes)
         }
 
-        if (surfaceId != null) {
-            enforce(platformId, surfaceId, settings, now)
-        } else if (now - lastSurfaceSeen > SURFACE_GRACE_MS) {
-            if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "leave surface")
-            tracker.leave()
-            lastSurfaceId = null
-        }
+        if (surfaceId != null) enforce(platformId, surfaceId, settings, now)
 
         refreshHud()
+    }
+
+    /**
+     * Whether the clip feed is provably gone, as opposed to merely hard to name.
+     *
+     * A frame that fails detection is not evidence of leaving - that is what an app update does to
+     * an activity class name, and it used to restart the counter mid-scroll. Only focus moving away,
+     * the bottom bar coming back, or a tree with no pager in it ends the session.
+     */
+    private fun feedClosed(
+        pkg: String,
+        nodes: List<AccessibilityNodeInfo>,
+        pager: Boolean,
+        now: Long,
+    ): Boolean {
+        val stale = now - lastSurfaceSeen
+        if (stale <= SURFACE_GRACE_MS) return false
+        val owner = foregroundWindowPackage()
+        if (owner != null && owner != pkg) return true
+        if (hasBottomLabel(nodes, "home")) return true
+        return !pager && stale > SURFACE_STALE_MS
     }
 
     // ---------------------------------------------------------------- hiding
@@ -514,9 +664,6 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun hasEditableNode(nodes: List<AccessibilityNodeInfo>): Boolean =
-        nodes.any { it.isEditable }
-
     private fun isPagerScroll(event: AccessibilityEvent): Boolean {
         val source = event.source ?: return true
         val bounds = Rect()
@@ -525,17 +672,75 @@ class GuardAccessibilityService : AccessibilityService() {
         return bounds.height() >= resources.displayMetrics.heightPixels * 0.5f
     }
 
-    /** Picks the active window that belongs to the target app, ignoring our own overlays. */
-    private fun activeRootFor(pkg: String): AccessibilityNodeInfo? {
+    /** Picks the target app's window, cheapest source first, ignoring our own overlays. */
+    private fun activeRootFor(pkg: String, source: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        runCatching {
+            val active = rootInActiveWindow
+            if (active != null && active.packageName?.toString() == pkg) return active
+        }
         runCatching {
             windows.forEach { window ->
                 val candidate = window.root
                 if (candidate != null && candidate.packageName?.toString() == pkg) return candidate
             }
         }
-        val fallback = rootInActiveWindow
-        return if (fallback?.packageName?.toString() == pkg) fallback else null
+        // Some OEMs answer with the launcher, a dialog, or our own overlay. The node that produced
+        // the event always belongs to the app, so climb to its window root instead of losing it.
+        return runCatching {
+            var node = source ?: return null
+            var root = node
+            var depth = 0
+            while (depth < 40) {
+                val parent = node.parent ?: break
+                root = parent
+                node = parent
+                depth++
+            }
+            root.takeIf { it.packageName?.toString() == pkg }
+        }.getOrNull()
     }
+
+    /**
+     * Structural proof of a swipeable clip feed: a full-screen scrollable whose own item fills the
+     * viewport. Class names and view ids change with every app release; a vertical pager holding one
+     * screen-tall page is what Reels, Shorts, For You and Spotlight all are on every device.
+     */
+    private fun hasClipPager(nodes: List<AccessibilityNodeInfo>): Boolean {
+        val metrics = resources.displayMetrics
+        val pager = nodes.firstOrNull { node ->
+            if (!node.isScrollable ||
+                node.actionList.none { it.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD }
+            ) {
+                return@firstOrNull false
+            }
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            rect.height() >= metrics.heightPixels * 0.72f && rect.width() >= metrics.widthPixels * 0.9f
+        } ?: return false
+        val bounds = Rect()
+        pager.getBoundsInScreen(bounds)
+        for (index in 0 until pager.childCount) {
+            val child = runCatching { pager.getChild(index) }.getOrNull() ?: continue
+            val childBounds = Rect()
+            child.getBoundsInScreen(childBounds)
+            if (childBounds.height() >= bounds.height() * 0.82f &&
+                childBounds.width() >= bounds.width() * 0.9f
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /** The soft keyboard is its own window: comments are open whenever it is on screen. */
+    private fun imeVisible(): Boolean = runCatching {
+        windows.any { window ->
+            if (window.type != AccessibilityWindowInfo.TYPE_INPUT_METHOD) return@any false
+            val bounds = Rect()
+            window.getBoundsInScreen(bounds)
+            bounds.height() > 0
+        }
+    }.getOrDefault(false)
 
     private fun collectNodes(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
         val result = ArrayList<AccessibilityNodeInfo>(128)
@@ -546,6 +751,11 @@ class GuardAccessibilityService : AccessibilityService() {
             val node = queue.removeFirst()
             visited++
             result.add(node)
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            // Collapsed rows stay in the tree and cost a binder call each. Nothing measurable is
+            // inside a zero-area container, so the walk stops there instead of at the page.
+            if (bounds.width() <= 0 || bounds.height() <= 0) continue
             for (index in 0 until node.childCount) {
                 node.getChild(index)?.let { queue.add(it) }
             }
@@ -557,15 +767,26 @@ class GuardAccessibilityService : AccessibilityService() {
 
     private fun detectSurface(
         platformId: String,
-        event: AccessibilityEvent,
+        event: AccessibilityEvent?,
         nodes: List<AccessibilityNodeInfo>,
+        pager: Boolean,
     ): String? {
         val platform = PlatformCatalog.byId(platformId) ?: return null
         // Activity context is stable across scroll events; event.className is usually RecyclerView there.
-        val className = (currentActivityClass ?: event.className?.toString() ?: "").lowercase()
+        val className = (currentActivityClass ?: event?.className?.toString() ?: "").lowercase()
         platform.surfaces.firstOrNull { surface ->
             surface.classHints.any { className.contains(it) }
         }?.let { return it.id }
+
+        // Version-proof structural path: a screen-filling vertical pager is the app's clip feed,
+        // whatever this release named the activity. Stories are excluded by their own captions, and
+        // so is any screen still showing the app's tab bar: a normal home feed is a pager too, and
+        // counting it as Reels would invent time the user never spent in a clip feed.
+        if (pager && !hasAnyLabel(nodes, "story", "stories", "view story", "add to your story") &&
+            !hasBottomLabel(nodes, "home")
+        ) {
+            platform.surfaces.firstOrNull { it.immersive }?.let { return it.id }
+        }
 
         // Compose windows report FrameLayout, so a clip pager has to prove itself by content.
         // Grid surfaces such as Explore keep their bottom bar and are never claimed here.
@@ -589,6 +810,13 @@ class GuardAccessibilityService : AccessibilityService() {
         return tokens.firstOrNull { (token, _) -> label == token || label.startsWith("$token ") }?.second
             ?: tokens.firstOrNull { (token, _) -> label.contains(token) }?.second
     }
+
+    private fun hasAnyLabel(nodes: List<AccessibilityNodeInfo>, vararg tokens: String): Boolean =
+        nodes.any { node ->
+            val label = (node.text ?: node.contentDescription)?.toString()?.trim()?.lowercase()
+                ?: return@any false
+            tokens.any { label.contains(it) }
+        }
 
     /**
      * App-level budget. Reads today's foreground time at most once a minute, warns at 80% and
@@ -746,6 +974,12 @@ class GuardAccessibilityService : AccessibilityService() {
             hud.hide()
             return
         }
+        if (focusLostAt != 0L) {
+            // Another window is on screen. The ticker is already deciding whether the session is
+            // over; until then nothing of ours may be painted over the app in front.
+            hud.hide()
+            return
+        }
         val today = LocalDate.now().toEpochDay()
         val records = AppRepository.get(this).watch.value.filter { it.epochDay == today }
         val baseCount = records.sumOf { it.count }
@@ -798,27 +1032,31 @@ class GuardAccessibilityService : AccessibilityService() {
     // ------------------------------------------------------------------ nudge
 
     /**
-     * The periodic in-feed reminder. Timed on feed minutes, not wall clock: a popup after 20
-     * minutes of *watching* is a signal, the same popup after 20 minutes with the phone face-down
-     * is noise the user learns to swipe past.
+     * The periodic in-feed reminder. Timed on minutes actually watched, not wall clock: a popup
+     * after 20 minutes of *watching* is a signal, the same popup after 20 minutes with the phone
+     * face-down is noise the user learns to swipe past.
      */
     private fun maybeNudge() {
         if (!::nudge.isInitialized || !::tracker.isInitialized) return
-        val now = SystemClock.elapsedRealtime()
         val settings = AppRepository.get(this).settings.value
         val cadence = settings.nudgeMinutes
         if (cadence <= 0 || !settings.trackingEnabled || !tracker.active || foregroundPlatform == null) {
-            nudgeAt = 0L
+            if (BuildConfig.DEBUG && nudgeAtMillis != 0L) {
+                Log.d("OpeneyeNudge", "disarmed cadence=$cadence tracking=${settings.trackingEnabled} active=${tracker.active} fg=$foregroundPlatform")
+            }
+            nudgeAtMillis = 0L
             if (nudge.isShowing) nudge.hide()
             return
         }
-        if (nudgeAt == 0L) {
+        if (nudgeAtMillis == 0L) {
             // The first one comes early, while switching contexts is still cheap.
-            nudgeAt = now + minOf(cadence, FIRST_NUDGE_MINUTES) * 60_000L
+            nudgeAtMillis = hudMillis + minOf(cadence, FIRST_NUDGE_MINUTES) * 60_000L
+            if (BuildConfig.DEBUG) Log.d("OpeneyeNudge", "armed at ${nudgeAtMillis / 60_000}m, now ${hudMillis / 60_000}m")
             return
         }
-        if (now < nudgeAt) return
-        nudgeAt = now + cadence * 60_000L
+        if (hudMillis < nudgeAtMillis) return
+        nudgeAtMillis = hudMillis + cadence * 60_000L
+        if (BuildConfig.DEBUG) Log.d("OpeneyeNudge", "fired at ${hudMillis / 60_000}m")
 
         val stopRule = settings.contract.stopRuleMinutes
         val overRule = stopRule > 0 && hudMillis >= stopRule * 60_000L
@@ -868,6 +1106,7 @@ class GuardAccessibilityService : AccessibilityService() {
     }
 
     private fun leaveTargetApp() {
+        if (BuildConfig.DEBUG) Log.d("OpeneyeFocus", "leave $currentPackage")
         if (::tracker.isInitialized) tracker.leave()
         signatureSurface = null
         signatureLabels = null
@@ -875,7 +1114,8 @@ class GuardAccessibilityService : AccessibilityService() {
         if (::overlays.isInitialized) overlays.clear()
         if (::hud.isInitialized) hud.hide()
         if (::nudge.isInitialized) nudge.removeNow()
-        nudgeAt = 0L
+        nudgeAtMillis = 0L
+        focusLostAt = 0L
         stopTicker()
         foregroundPlatform = null
         currentPackage = null
@@ -889,8 +1129,11 @@ class GuardAccessibilityService : AccessibilityService() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val EVALUATION_INTERVAL_MS = 300L
+        private const val EVALUATION_INTERVAL_MS = 400L
         private const val SURFACE_GRACE_MS = 3_000L
+        private const val SURFACE_STALE_MS = 10_000L
+        private const val FOCUS_LOST_MS = 2_000L
+        private const val TICK_MS = 1_000L
         private const val BLOCK_DEBOUNCE_MS = 1_500L
         private const val MAX_NODES = 400
         private const val LIMIT_CHANNEL = "openeye_limits"

@@ -9,6 +9,9 @@ way that is meant to change behaviour rather than make you feel bad about it.
 Version 4.0.0 - the public-launch cut: a redrawn mark, four tabs instead of five, the per-app
 details folded behind `add apps`, permissions that ask themselves at the right moment, and every
 screen driven on an emulator before it shipped.
+4.0.1 - 4.0.3 are the counting-correctness cuts: the overlay counts on a feed that emits no events,
+volume keys no longer restart a session, an interruption is resumed instead of reset, and a session
+closes when the clip feed is provably gone. See Verification.
 Forked from Openeye 2.3.0 at
 `C:\Users\kumar\.openclaw-autoclaw\workspace\openmind` (that folder is untouched).
 Package id intentionally unchanged: `com.example.openmind`. **Because the id is shared, installing
@@ -288,7 +291,8 @@ Artifacts:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (signed with the debug key, installable)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
-- `C:\Users\kumar\Downloads\openeye-4.0.0-debug.apk` - the copy handed over for install testing
+- `C:\Users\kumar\Downloads\openeye-4.0.3-debug.apk` - the copy handed over for install testing
+- `C:\Users\kumar\Downloads\openeye-4.0.3-release-unsigned.apk` - for the Galaxy Store upload after signing
 
 ## Verification
 
@@ -319,12 +323,49 @@ What was checked for 4.0.0, in this environment only:
   requested, and the feed HUD stayed painted over Openeye's own screens when you came back from
   YouTube.
 
+### Counting correctness (4.0.1 - 4.0.3)
+
+Reported from devices: the overlay counted nothing on Reels/Shorts, volume keys restarted the
+counter, and continuous same-app watching was not continuous. Each was reproduced on the API 36
+emulator and fixed, then re-checked on the installed binary with screenshots and `logcat`:
+
+- `:app:assembleDebug`, `:app:assembleRelease` -> BUILD SUCCESSFUL; `:app:testDebugUnitTest` ->
+  60 tests, 0 failures, 0 errors. Manifest: version 4.0.3 (code 13), still no INTERNET and no
+  SYSTEM_ALERT_WINDOW.
+- **Counting through an event drought.** A clip that plays without scrolling emits no accessibility
+  events, so the session is now re-measured by a 1 s ticker that asks the window manager who owns
+  the screen. Reproduced: a Reels feed left untouched for 25 s kept counting (1:04 continuous).
+- **Volume keys.** Two causes, both fixed: the system volume panel (`com.android.systemui`, not an
+  application window) was being read as the foreground app, and `onInterrupt()` tore the session
+  down when a key burst backed up the event queue. `foregroundWindowPackage()` now only accepts
+  `TYPE_APPLICATION` windows and `onInterrupt()` is a no-op. Reproduced and re-checked: five volume
+  presses leave the session continuous (0:28 with `active=true` in the log).
+- **Continuous same-app watching.** An interruption now closes the session but keeps it resumable
+  for 8 s, and the borrowed seconds are not counted. Reproduced: 0:28 before a 5 s home-screen trip,
+  0:58 after it - one session, gap excluded.
+- **The in-feed time popup.** It did not fire because reminders were set to `off` in the stored
+  settings, not because of a code defect. With a 3-minute cadence the popup was caught on screen
+  inside a real clip feed, quoting measured feed minutes and estimated clips.
+- **No invented sessions.** Two honesty regressions surfaced during this work and are fixed: the
+  structural pager rule claimed the Instagram *home* feed as Reels (Compose renders the home feed as
+  a full-screen pager too), and a ticker auto-resume resurrected a Reels session on package match
+  alone. The pager rule now refuses any screen still showing the app's tab bar, the auto-resume is
+  gone, and the surface is re-read from the window tree on every tick (`verifySurface`), so a session
+  ends within ~2 s of the clip feed being gone even when the app emits nothing afterwards.
+  Reproduced: `leave surface (tick)` in `logcat`, and the home feed showing only
+  `today 35m · 25 clips` with no session lines.
+- Clip and swipe counters move with real swipes (`source=content surface=reels count=3`, HUD
+  `2 swipes`, `this one` following the page to Reel 3). Time is measured; counts stay labelled
+  estimates.
+
 Not verified: no physical device, so OEM accessibility implementations (Xiaomi/Samsung/Huawei kill
-background overlays and rename the accessibility entry) are still unproven. Facebook, Facebook Lite,
-TikTok and Snapchat were never installed here, so their selectors remain catalog guesses. The
-release APK is unsigned and its R8 output has never run, so minification is unproven. A real Shorts
-or Reels feed could not be opened on this emulator image (YouTube refuses to run until updated), so
-the in-feed reminder popup was verified through the HUD and the block screen, not through a clip.
+background overlays and rename the accessibility entry) are still unproven - the Samsung/One UI
+behaviour behind the Galaxy Store submission is the open risk. Facebook, Facebook Lite, TikTok and
+Snapchat were never installed here, so their selectors remain catalog guesses. The release APK is
+unsigned and its R8 output has never run, so minification is unproven. Production Instagram,
+YouTube and Facebook could not be opened on this emulator image (YouTube refuses to run until
+updated), so all feed testing above ran against a local harness app that mimics their window,
+activity and view structure; the catalog class names for the real apps are still unconfirmed here.
 
 ## Known limitations
 

@@ -11,8 +11,8 @@ android {
     applicationId = "com.example.openmind"
     minSdk = 26
     targetSdk = 37
-    versionCode = 10
-    versionName = "4.0.0"
+    versionCode = 13
+    versionName = "4.0.3"
   }
 
   buildTypes {
@@ -36,6 +36,13 @@ android {
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+  }
+
+  testOptions {
+    unitTests {
+      // The counters log in debug builds; a JVM test should not need the android.jar stubs to run.
+      isReturnDefaultValues = true
     }
   }
 }

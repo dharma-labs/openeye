@@ -3,7 +3,6 @@ package com.example.openmind.service
 import android.os.SystemClock
 import android.util.Log
 import com.example.openmind.BuildConfig
-import com.example.openmind.data.AppRepository
 import java.time.LocalTime
 import kotlin.math.abs
 
@@ -16,14 +15,29 @@ data class WatchSnapshot(
     val currentItemMillis: Long,
 )
 
+/** One slice of measured feed time, handed straight to storage. */
+data class WatchSlice(
+    val platformId: String,
+    val surfaceId: String,
+    val count: Int,
+    val millis: Long,
+    val sessions: Int,
+    val longestSessionMs: Long,
+    val touches: Int,
+    val hour: Int,
+)
+
 /**
  * Counts time inside Reels/Shorts and estimates how many items were watched.
  *
  * The estimate is deliberately conservative: entering a surface counts the first item, and each
  * paging swipe afterwards counts one more. Auto-advancing players that emit no accessibility
- * scroll are not counted, so the counter under-reports rather than inventing views.
+ * evidence are not counted, so the counter under-reports rather than inventing views.
+ *
+ * Time is measured, never derived from a clip count. The tracker writes through a lambda instead of
+ * holding a repository so the session arithmetic can be tested off-device.
  */
-class WatchSessionTracker(private val repository: AppRepository) {
+class WatchSessionTracker(private val write: (WatchSlice) -> Unit) {
 
     private var platformId: String? = null
     private var surfaceId: String? = null
@@ -44,6 +58,21 @@ class WatchSessionTracker(private val repository: AppRepository) {
     private var lastFlushAt = 0L
     private var lastCountAt = 0L
 
+    /**
+     * The session that just closed. A volume key, a notification glance or an app update that
+     * renamed a class used to end the session outright, so the readout restarted from zero in the
+     * middle of continuous watching. Held open for a moment lets it continue instead.
+     */
+    private var holdPlatform: String? = null
+    private var holdSurface: String? = null
+    private var holdCount = 0
+    private var holdMillis = 0L
+    private var holdTouches = 0
+    private var holdFirstView = false
+    private var holdLastCountAt = 0L
+    private var holdLastItemAt = 0L
+    private var holdUntil = 0L
+
     val active: Boolean get() = platformId != null
 
     fun enter(platform: String, surface: String, now: Long = SystemClock.elapsedRealtime()) {
@@ -52,19 +81,38 @@ class WatchSessionTracker(private val repository: AppRepository) {
             return
         }
         flush(now)
+        val resumed = holdPlatform == platform && holdSurface == surface && now <= holdUntil
         reset()
         platformId = platform
         surfaceId = surface
-        // Do not count a view until the feed has actually been on screen for a moment.
-        sessionCount = 0
-        unflushedCount = 0
-        firstViewCounted = false
-        unflushedSessions = 1
+        if (resumed) {
+            // The gap is excluded because lastTickAt starts from now: only the seconds actually
+            // spent on the feed are added, while the numbers continue from where they stopped.
+            val resumedCount = holdCount
+            val resumedMillis = holdMillis
+            val resumedTouches = holdTouches
+            val resumedFirstView = holdFirstView
+            val resumedLastCountAt = holdLastCountAt
+            val resumedLastItemAt = holdLastItemAt
+            clearHold()
+            sessionCount = resumedCount
+            sessionMillis = resumedMillis
+            sessionTouches = resumedTouches
+            firstViewCounted = resumedFirstView
+            lastCountAt = resumedLastCountAt
+            lastItemAt = resumedLastItemAt
+        } else {
+            // Do not count a view until the feed has actually been on screen for a moment.
+            sessionCount = 0
+            unflushedCount = 0
+            firstViewCounted = false
+            unflushedSessions = 1
+            // The first swipe can arrive immediately; do not gate it behind the entry count.
+            lastCountAt = now - SCROLL_COOLDOWN_MS
+            lastItemAt = now
+        }
         lastTickAt = now
         lastFlushAt = now
-        // The first swipe can arrive immediately; do not gate it behind the entry count.
-        lastCountAt = now - SCROLL_COOLDOWN_MS
-        lastItemAt = now
     }
 
     fun tick(now: Long = SystemClock.elapsedRealtime()) {
@@ -99,7 +147,7 @@ class WatchSessionTracker(private val repository: AppRepository) {
         tick(now)
     }
 
-    /** Any scroll event in a feed is treated as a paging attempt. 
+    /** Any scroll event in a feed is treated as a paging attempt.
      *  Many apps emit zero deltas and -1 indices, so the old evidence check missed real swipes.
      */
     fun noteScroll(now: Long = SystemClock.elapsedRealtime()) {
@@ -139,6 +187,13 @@ class WatchSessionTracker(private val repository: AppRepository) {
         currentItemMillis = if (platformId == null) 0L else (SystemClock.elapsedRealtime() - lastItemAt).coerceAtLeast(0L),
     )
 
+    /** Minutes the current session has been on screen, or the held one if nothing is active. */
+    fun sessionMillis(): Long = if (platformId != null) sessionMillis else holdMillis
+
+    /** True while a closed session can still be continued. */
+    fun holdOpen(now: Long = SystemClock.elapsedRealtime()): Boolean =
+        platformId == null && holdUntil != 0L && now <= holdUntil
+
     fun pendingCount(): Int = unflushedCount
 
     fun pendingMillis(): Long = unflushedMillis
@@ -147,15 +202,17 @@ class WatchSessionTracker(private val repository: AppRepository) {
         val platform = platformId ?: return
         val surface = surfaceId ?: return
         if (unflushedCount > 0 || unflushedMillis > 0 || unflushedSessions > 0 || unflushedTouches > 0) {
-            repository.addWatch(
-                platformId = platform,
-                surfaceId = surface,
-                count = unflushedCount,
-                millis = unflushedMillis,
-                sessions = unflushedSessions,
-                longestSessionMs = sessionMillis,
-                touches = unflushedTouches,
-                hour = LocalTime.now().hour,
+            write(
+                WatchSlice(
+                    platformId = platform,
+                    surfaceId = surface,
+                    count = unflushedCount,
+                    millis = unflushedMillis,
+                    sessions = unflushedSessions,
+                    longestSessionMs = sessionMillis,
+                    touches = unflushedTouches,
+                    hour = LocalTime.now().hour,
+                ),
             )
             unflushedCount = 0
             unflushedMillis = 0
@@ -169,7 +226,39 @@ class WatchSessionTracker(private val repository: AppRepository) {
         if (platformId == null) return
         tick(now)
         flush(now)
+        holdSession(now)
         reset()
+    }
+
+    private fun holdSession(now: Long) {
+        // Only a session with measured time can continue, so a tap that opens nothing cannot
+        // chain onto the next one.
+        if (sessionMillis <= 0L) {
+            clearHold()
+            return
+        }
+        holdPlatform = platformId
+        holdSurface = surfaceId
+        holdCount = sessionCount
+        holdMillis = sessionMillis
+        holdTouches = sessionTouches
+        holdFirstView = firstViewCounted
+        holdLastCountAt = lastCountAt
+        holdLastItemAt = lastItemAt
+        holdUntil = now + RESUME_WINDOW_MS
+    }
+
+    /** Forget the held session: used when the shield is switched off or the day rolls over. */
+    fun clearHold() {
+        holdPlatform = null
+        holdSurface = null
+        holdCount = 0
+        holdMillis = 0L
+        holdTouches = 0
+        holdFirstView = false
+        holdLastCountAt = 0L
+        holdLastItemAt = 0L
+        holdUntil = 0L
     }
 
     private fun reset() {
@@ -182,11 +271,9 @@ class WatchSessionTracker(private val repository: AppRepository) {
         unflushedSessions = 0
         unflushedTouches = 0
         sessionTouches = 0
-        lastItemAt = 0L
         lastTouchAt = 0L
         lastTickAt = 0L
         lastFlushAt = 0L
-        lastCountAt = 0L
     }
 
     companion object {
@@ -198,5 +285,6 @@ class WatchSessionTracker(private val repository: AppRepository) {
         private const val TOUCH_COOLDOWN_MS = 250L
         private const val SCROLL_COOLDOWN_MS = 1_500L
         private const val SIGNATURE_COOLDOWN_MS = 3_000L
+        const val RESUME_WINDOW_MS = 8_000L
     }
 }
