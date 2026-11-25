@@ -40,11 +40,31 @@ fdroid build io.github.dharma_labs.openeye     # runs the build in docker
 >   `fastlane/metadata/android/en-US/`, so `AntiFeatureText` and friends are not needed.
 > - The build is the R8 release variant, which is the variant that has been run on a device end to
 >   end. The output is `app/build/outputs/apk/release/app-release-unsigned.apk`.
-> - Reproducible builds are not enabled yet; the recipe is a plain gradle build. Happy to move to
->   `gradle: reproduce` once the signing config is in the build file rather than applied out of
->   band.
+> - The APK attached to the `v5.1.0` tag is that clean `assembleRelease` output, zipaligned and
+>   signed, so comparing against it should pass. Reproducible builds are not switched on in this
+>   recipe yet - `AllowedAPKSigningKeys` can go in on the next release.
 >
 > I am the author and the maintainer of the upstream repository.
+
+## Checked before submitting
+
+`git clone --branch v5.1.0` into a clean directory with only `ANDROID_HOME` and `JAVA_HOME` set, then
+`./gradlew :app:assembleRelease`, builds and passes `lintVitalRelease` - that is the same shape of
+environment the F-Droid builder uses, and it has no `local.properties` in it.
+
+The APK published in both release repos is the output of that clean build, zipaligned and signed
+with the release key (cert SHA-256
+`e6e867f255baed04d6b35289b5533035765d72d8fae007626218b81f6922d8c5`). Building the tag twice from
+scratch gives the same unsigned bytes, so the only difference between the F-Droid APK and the
+GitHub one is the signature.
+
+That is worth saying in the MR, but the recipe above does not claim reproducible builds yet: doing
+that needs `AllowedAPKSigningKeys` with the fingerprint of the release certificate, and it is a
+second change to a file a maintainer has to review. Add it once 5.1.0 is in the archive.
+
+One caveat for anyone rebuilding: AGP writes `META-INF/version-control-info.textproto` into the APK
+with the commit it saw. Building from a dirty working tree changes that file, so compare against a
+clean checkout of the tag, not against a build of your own branch.
 
 ## After it is accepted
 

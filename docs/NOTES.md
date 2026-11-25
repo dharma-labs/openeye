@@ -369,15 +369,17 @@ Artifacts:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (signed with the debug key, installable)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
-- `C:\Users\kumar\Downloads\openeye-4.2.0-debug.apk` - the copy handed over for install testing
-- `C:\Users\kumar\Downloads\openeye-4.2.0-release-unsigned.apk` - for the Galaxy Store upload after signing
-- `C:\Users\kumar\Downloads\openeye-4.2.0-release.apk` - zipaligned + signed (v2, v3), the public download
+- `C:\Users\kumar\Downloads\openeye-5.1.0-release.apk` - zipaligned + signed (v2, v3), the copy for
+  the Galaxy Store upload
 - `C:\Users\kumar\.openclaw-autoclaw\workspace\openeye-signing\` - `openeye-release.jks` and
   `keystore-password.txt`, outside the repo. This key is the only way to ship an update over an
   installed release build; if it is lost, every user has to uninstall and lose their data.
-- Public release: `https://github.com/dharma-labs/openeye-releases` (this repo holds only the signed
-  apk and the install page; the source stays private here). Direct link that always follows the
-  newest release: `https://github.com/dharma-labs/openeye-releases/releases/latest/download/openeye-4.2.0.apk`
+- Source: `https://github.com/dharma-labs/openeye`, public under GPL-3.0 since 5.1.0.
+- Public APK: `https://github.com/dharma-labs/openeye-releases` (that repo holds only the signed apk
+  and the install page). Direct link that always follows the newest release:
+  `https://github.com/dharma-labs/openeye-releases/releases/latest/download/openeye-5.1.0.apk`
+- F-Droid: recipe and submission steps in `packaging/fdroid/`. Not submitted from this machine -
+  the merge request needs a GitLab account.
 
 ## Verification
 
@@ -553,6 +555,43 @@ that treat accessibility overlays from a running service as a battery cost; and 
 path rather than a tested one. The 21h bug itself was reproduced only as arithmetic - the emulator
 could not be made to disagree with the events the way a real phone did.
 
+### The publishable cut (5.1.0)
+
+Three reports about screens that needed scrolling, and one about a headline that broke in the middle
+of a word. All three were the same mistake seen twice: a Column that assumed the phone was shorter
+than it is.
+
+- Onboarding: the body scrolls, the buttons do not. Verified on the emulator at 1080x2400 - welcome,
+  permissions, the two questions, the summary, `skip`, and `open openeye` all land without a swipe.
+  The welcome headline dropped from `displayLarge` to `displaySmall` and took explicit line breaks,
+  because at 60sp inside 44dp of padding "accidentally" has nowhere to go and splits as
+  `accident / ally` on a 360dp phone. That is the first screen anyone sees.
+- Block sheet: same split, exits pinned below a scrollable body, and the body centred inside the
+  space left for it. Measured after the change: the monogram moved from y230 to y399 on the same
+  device, which is the dead band moving out from under the buttons instead of above them. Gentle
+  mode ran end to end - 8s ring, feeling chips, `open for 5 min`, and the bypass landing in
+  `com.instagram.android/.ReelsActivity` rather than back in Openeye (that needed
+  `android:taskAffinity=""` on BlockActivity; sharing our affinity meant `CLEAR_TOP` brought our own
+  task forward). Strict mode: `locked` pill, `close it` -> launcher, and `back's off too` saying so.
+- Feeling chips are one word each. "actually good" rendered as "actually" in a quarter-width chip
+  with `maxLines = 1`, which reads as a truncated string rather than as a feeling.
+
+The id change was checked by doing it: `grep` for `com.example` and `openmind` across the source tree
+comes back empty, the unit tests pass, and after a fresh install of the signed release the
+accessibility service shows up under `Enabled services` in `dumpsys accessibility` with no crash,
+which is the only proof that matters that the service declaration survived the rename and R8.
+
+The APK that shipped is `assembleRelease` from a clean `git clone --branch v5.1.0` with only
+`ANDROID_HOME` and `JAVA_HOME` set, then zipaligned and signed. That was not the first build: the
+working-tree build and the tag build differed, and the only entry that changed was
+`META-INF/version-control-info.textproto`, which carries the commit AGP could see. Anyone comparing
+a rebuild against the published APK has to start from a clean checkout of the tag, or that one file
+makes the whole comparison fail.
+
+Not verified in 5.1.0: any of the above on a physical phone, the block sheet on a device short
+enough that the exits genuinely have to scroll into view, and the F-Droid builder itself - the
+recipe has never been run by `fdroid build`, only by the equivalent gradle command on this machine.
+
 ## Known limitations
 
 - Detected taps under-count literal finger touches; the service sees accessibility click events only.
@@ -599,7 +638,9 @@ could not be made to disagree with the events the way a real phone did.
 3. Weekly report, and a second widget size for a week rather than a day. (The daily widget shipped
    in 4.1.0.)
 4. Optional encrypted export and biometric lock.
-5. Permanent production application id with a documented migration.
+5. Permanent production application id with a documented migration. (Shipped in 5.1.0 as
+   `io.github.dharma_labs.openeye`. The migration is the uninstall note, because no id change keeps
+   an installed app's data, and pretending otherwise would have meant a fake upgrade path.)
 6. Install the 4.0.0 APK on a real phone and read the new copy out loud - twelve-word lines that
    work on paper are the ones that need cutting, and the rotation only proves itself over a week.
 

@@ -3,7 +3,6 @@ License: GPL-3.0-only
 WebURL: https://github.com/dharma-labs/openeye
 SourceCode: https://github.com/dharma-labs/openeye
 IssueTracker: https://github.com/dharma-labs/openeye/issues
-ChangelogMode: 5
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
