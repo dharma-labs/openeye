@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The day's progress against the person's own number, as a bar rather than a sentence.
+  Glanceable distance-to-goal is the whole point of the widget; the text line stays for when it
+  is read rather than glanced at.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape android:shape="rectangle">
+            <corners android:radius="3dp" />
+            <solid android:color="@color/widget_track" />
+        </shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <shape android:shape="rectangle">
+                <corners android:radius="3dp" />
+                <solid android:color="@color/openmind_accent" />
+            </shape>
+        </clip>
+    </item>
+</layer-list>

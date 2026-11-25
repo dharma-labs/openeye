@@ -2,7 +2,6 @@ package com.example.openmind.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,11 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.openmind.data.BlockMode
 import com.example.openmind.data.Platform
@@ -34,23 +34,41 @@ import com.example.openmind.data.PlatformConfig
 import com.example.openmind.data.Settings
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.components.Divider
+import com.example.openmind.ui.components.DisclosureRow
+import com.example.openmind.ui.components.EyeIcon
+import com.example.openmind.ui.components.IconTile
 import com.example.openmind.ui.components.ModeSelector
 import com.example.openmind.ui.components.Monogram
 import com.example.openmind.ui.components.OMCard
 import com.example.openmind.ui.components.OMSwitch
 import com.example.openmind.ui.components.Pill
+import com.example.openmind.ui.components.Revealed
 import com.example.openmind.ui.components.ScreenHeader
+import com.example.openmind.ui.components.SectionHeader
 import com.example.openmind.ui.components.SectionLabel
 import com.example.openmind.ui.components.ToggleRow
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
+import com.example.openmind.ui.theme.AccentDim
+import com.example.openmind.ui.theme.AccentSoft
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
 import com.example.openmind.ui.theme.Hairline
 import com.example.openmind.ui.theme.Ink
-import com.example.openmind.ui.theme.AccentDim
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.SurfaceOne
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
 import com.example.openmind.ui.theme.TextTertiary
+import com.example.openmind.ui.theme.Warn
 
+/**
+ * Shields answers one question before the person scrolls: is it working right now?
+ *
+ * The card at the top is the state of the phone, not a menu. Everything below it is an edit. People
+ * check a protection app the way they check a lock on a door - a glance, then they walk away - so the
+ * glance has to be the first thing on the screen, and it has to be true.
+ */
 @Composable
 fun ShieldsScreen(
     settings: Settings,
@@ -71,225 +89,157 @@ fun ShieldsScreen(
 
     val coreApps = setOf(PlatformCatalog.INSTAGRAM, PlatformCatalog.YOUTUBE, PlatformCatalog.FACEBOOK)
     val shownApps = PlatformCatalog.all.filter { showMoreApps || it.id in coreApps }
+    val armed = armedSurfaces(settings)
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 22.dp),
+        contentPadding = PaddingValues(
+            start = EyeSpace.screen,
+            top = EyeSpace.lg,
+            end = EyeSpace.screen,
+            bottom = EyeSpace.xxxl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(EyeSpace.between),
     ) {
         item {
             ScreenHeader(
                 title = "shields",
                 subtitle = "the apps stay. the endless part doesn't.",
                 trailing = {
-                    com.example.openmind.ui.components.NavGlyph(
+                    IconTile(
                         type = "settings",
                         tint = TextSecondary,
-                        modifier = Modifier.size(22.dp).clickable(onClick = onOpenSettings),
+                        size = 40.dp,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(EyeShape.chip))
+                            .eyePress(onClick = onOpenSettings),
                     )
                 },
             )
         }
-        item { Spacer(Modifier.height(20.dp)) }
+
+        item { ShieldState(armed, settings.masterEnabled) }
 
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("strict mode", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Spacer(Modifier.width(8.dp))
-                    Pill("no bypass", color = AccentDim)
-                    Spacer(Modifier.weight(1f))
-                    OMSwitch(checked = settings.strictMode, onCheckedChange = onStrictChange)
-                }
+            OMCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
+            ) {
+                ToggleRow(
+                    title = "strict mode",
+                    subtitle = if (settings.strictMode) "no way through, not even a tap" else "one tap lets you through",
+                    checked = settings.strictMode,
+                    onCheckedChange = onStrictChange,
+                    icon = "lock",
+                )
             }
         }
-        item { Spacer(Modifier.height(20.dp)) }
-        item { SectionLabel("apps") }
-        item { Spacer(Modifier.height(10.dp)) }
+
+        item {
+            SectionHeader(
+                text = "apps",
+                action = if (showMoreApps) null else "add apps",
+                onAction = { showMoreApps = true },
+            )
+        }
 
         shownApps.forEach { platform ->
             val config = settings.platforms[platform.id]
-            val enabled = config?.enabled == true
             item(key = platform.id) {
-                OMCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp),
-                    padding = PaddingValues(0.dp),
-                ) {
-                    Column {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { expanded = if (expanded == platform.id) null else platform.id }
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Monogram(platform, size = 40.dp)
-                            Spacer(Modifier.width(13.dp))
-                            Text(
-                                platform.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = TextPrimary,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Pill(
-                                text = platformStateLabel(platform, config),
-                                color = if (enabled) AccentDim else TextTertiary,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            OMSwitch(checked = enabled, onCheckedChange = { onTogglePlatform(platform.id, it) })
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (expanded == platform.id) "⌃" else "⌄",
-                                color = TextTertiary,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-                        if (expanded == platform.id) {
-                            Divider()
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                platform.surfaces.forEach { surface ->
-                                    val mode = config?.surfaces?.get(surface.id)?.mode ?: BlockMode.OFF
-                                    Text(
-                                        surface.label,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = TextSecondary,
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    ModeSelector(
-                                        selected = mode,
-                                        onSelect = { onSurfaceMode(platform.id, surface.id, it) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    Spacer(Modifier.height(14.dp))
-                                }
-                                Text("daily limit", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                                Spacer(Modifier.height(8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    listOf(0 to "off", 15 to "15m", 30 to "30m", 45 to "45m", 60 to "1h").forEach { (minutes, label) ->
-                                        val selected = (config?.dailyLimitMinutes ?: 0) == minutes
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-                                                .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-                                                .clickable { onLimitChange(platform.id, minutes) }
-                                                .padding(vertical = 7.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                label,
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = if (selected) Ink else TextSecondary,
-                                            )
-                                        }
-                                    }
-                                }
-                                val needsUsage = (config?.dailyLimitMinutes ?: 0) > 0 && !permissions.usageAccess
-                                if (needsUsage) {
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        "usage access off - tap to allow",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Accent,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .clickable(onClick = onGrantUsage),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                AppCard(
+                    platform = platform,
+                    config = config,
+                    expanded = expanded == platform.id,
+                    usageAccess = permissions.usageAccess,
+                    onExpand = { expanded = if (expanded == platform.id) null else platform.id },
+                    onToggle = { onTogglePlatform(platform.id, it) },
+                    onSurfaceMode = { surfaceId, mode -> onSurfaceMode(platform.id, surfaceId, mode) },
+                    onLimitChange = { minutes -> onLimitChange(platform.id, minutes) },
+                    onGrantUsage = onGrantUsage,
+                )
             }
         }
 
-        if (!showMoreApps) {
-            item { Spacer(Modifier.height(4.dp)) }
-            item {
+        item {
+            OMCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(0.dp),
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable { showMoreApps = true }
-                        .padding(vertical = 12.dp),
+                        .eyePress(onClick = onOpenSchedule)
+                        .padding(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        "tiktok, snapchat",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.weight(1f),
+                    IconTile(
+                        type = "moon",
+                        tint = if (settings.schedule.enabled) Accent else TextSecondary,
+                        size = 36.dp,
                     )
-                    Text("add apps", style = MaterialTheme.typography.labelLarge, color = Accent)
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(12.dp)) }
-        item {
-            OMCard(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSchedule),
-                padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("quiet hours", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(EyeSpace.md))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("quiet hours", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = if (settings.schedule.enabled) {
+                                "on from ${clockLabel(settings.schedule.startMinute)} to ${clockLabel(settings.schedule.endMinute)}"
+                            } else {
+                                "the feeds wait until morning"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    }
                     Pill(
                         text = if (settings.schedule.enabled) "on" else "off",
                         color = if (settings.schedule.enabled) AccentDim else TextTertiary,
                     )
-                    Spacer(Modifier.weight(1f))
-                    Text("→", color = Accent, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.width(EyeSpace.sm))
+                    EyeIcon("chevron", tint = TextTertiary, size = 16.dp)
                 }
             }
         }
 
-        item { Spacer(Modifier.height(12.dp)) }
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { showAdvanced = !showAdvanced }
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SectionLabel("advanced", modifier = Modifier.weight(1f))
-                Text(if (showAdvanced) "⌃" else "⌄", color = TextTertiary, style = MaterialTheme.typography.titleMedium)
-            }
+            DisclosureRow(
+                label = "nudges and counting",
+                expanded = showAdvanced,
+                onClick = { showAdvanced = !showAdvanced },
+                hint = if (showAdvanced) null else "how often you get told",
+            )
         }
-        if (showAdvanced) {
-            item { Spacer(Modifier.height(6.dp)) }
-            item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+        item {
+            Revealed(expanded = showAdvanced) {
+                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                     Column {
-                        Text("reminders", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SectionLabel("remind me every")
+                        Spacer(Modifier.height(EyeSpace.md))
+                        Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm)) {
                             nudgeChoices.forEach { minutes ->
                                 ChoiceChip(
                                     label = if (minutes == 0) "off" else "${minutes}m",
                                     selected = settings.nudgeMinutes == minutes,
                                     onClick = { onNudgeChange(minutes) },
+                                    modifier = Modifier.weight(1f),
                                 )
                             }
                         }
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(EyeSpace.lg))
                         Divider()
-                        Spacer(Modifier.height(18.dp))
+                        Spacer(Modifier.height(EyeSpace.lg))
                         ToggleRow(
                             title = "long videos too",
+                            subtitle = "count whole apps, not only clips",
                             checked = settings.countLongVideos,
                             onCheckedChange = onLongVideosChange,
+                            icon = "play",
                         )
                     }
                 }
             }
         }
 
-        item { Spacer(Modifier.height(16.dp)) }
         item {
             Text(
                 "chats and dms stay untouched.",
@@ -297,11 +247,209 @@ fun ShieldsScreen(
                 color = TextTertiary,
             )
         }
-        item { Spacer(Modifier.height(28.dp)) }
+    }
+}
+
+/** The state of the phone, measured from the same settings the service reads. */
+@Composable
+private fun ShieldState(armed: List<String>, masterOn: Boolean) {
+    val on = masterOn && armed.isNotEmpty()
+    OMCard(
+        modifier = Modifier.fillMaxWidth(),
+        padding = PaddingValues(EyeSpace.xl),
+        glow = if (on) Accent else null,
+        surface = if (on) SurfaceOne else AccentSoft.copy(alpha = 0.35f),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(type = "shield", tint = if (on) Accent else TextTertiary, size = 44.dp, filled = on)
+            Spacer(Modifier.width(EyeSpace.lg))
+            Column(modifier = Modifier.weight(1f)) {
+                SectionLabel("right now")
+                Spacer(Modifier.height(EyeSpace.sm))
+                Text(
+                    text = when {
+                        !masterOn -> "everything is off"
+                        armed.isEmpty() -> "nothing armed"
+                        else -> "${armed.size} shield${if (armed.size == 1) "" else "s"} up"
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if (on) TextPrimary else TextSecondary,
+                )
+                Spacer(Modifier.height(EyeSpace.xs))
+                Text(
+                    text = when {
+                        !masterOn -> "turn the master switch back on in settings"
+                        armed.isEmpty() -> "arm one below and it starts on your next swipe"
+                        else -> armed.joinToString(" · ")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (masterOn) TextSecondary else Warn,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppCard(
+    platform: Platform,
+    config: PlatformConfig?,
+    expanded: Boolean,
+    usageAccess: Boolean,
+    onExpand: () -> Unit,
+    onToggle: (Boolean) -> Unit,
+    onSurfaceMode: (String, BlockMode) -> Unit,
+    onLimitChange: (Int) -> Unit,
+    onGrantUsage: () -> Unit,
+) {
+    val enabled = config?.enabled == true
+    val limit = config?.dailyLimitMinutes ?: 0
+    OMCard(
+        modifier = Modifier.fillMaxWidth(),
+        padding = PaddingValues(0.dp),
+        raised = expanded,
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = MinTouch)
+                    .eyePress(onClick = onExpand)
+                    .padding(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Monogram(platform, size = 36.dp)
+                Spacer(Modifier.width(EyeSpace.md))
+                Text(
+                    platform.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (enabled) TextPrimary else TextSecondary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                )
+                Pill(text = platformStateLabel(platform, config), color = if (enabled) AccentDim else TextTertiary)
+                Spacer(Modifier.width(EyeSpace.sm))
+                OMSwitch(checked = enabled, onCheckedChange = onToggle)
+                Spacer(Modifier.width(EyeSpace.xs))
+                EyeIcon(
+                    type = if (expanded) "chevron_up" else "chevron",
+                    tint = TextTertiary,
+                    size = 18.dp,
+                )
+            }
+            Revealed(expanded = expanded) {
+                Divider()
+                Column(modifier = Modifier.padding(EyeSpace.lg)) {
+                    platform.surfaces.forEach { surface ->
+                        val mode = config?.surfaces?.get(surface.id)?.mode ?: BlockMode.OFF
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(
+                                        if (mode == BlockMode.OFF) Hairline else Accent,
+                                        RoundedCornerShape(100.dp),
+                                    )
+                            )
+                            Spacer(Modifier.width(EyeSpace.sm))
+                            Text(
+                                surface.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = TextSecondary,
+                            )
+                        }
+                        Spacer(Modifier.height(EyeSpace.sm))
+                        ModeSelector(selected = mode, onSelect = { onSurfaceMode(surface.id, it) }, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(EyeSpace.lg))
+                    }
+
+                    SectionLabel("daily limit")
+                    Spacer(Modifier.height(EyeSpace.sm))
+                    Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.xs)) {
+                        limitChoices.forEach { (minutes, label) ->
+                            ChoiceChip(
+                                label = label,
+                                selected = limit == minutes,
+                                onClick = { onLimitChange(minutes) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+
+                    if (limit > 0 && !usageAccess) {
+                        Spacer(Modifier.height(EyeSpace.md))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = MinTouch)
+                                .clip(RoundedCornerShape(EyeShape.field))
+                                .background(Warn.copy(alpha = 0.10f))
+                                .eyePress(onClick = onGrantUsage)
+                                .padding(horizontal = EyeSpace.md, vertical = EyeSpace.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            EyeIcon("alert", tint = Warn, size = 18.dp)
+                            Spacer(Modifier.width(EyeSpace.sm))
+                            Text(
+                                "the limit needs usage access",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Warn,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(EyeShape.chip)
+    Box(
+        modifier = modifier
+            .heightIn(min = 38.dp)
+            .clip(shape)
+            .background(if (selected) Accent else SurfaceOne, shape)
+            .border(1.dp, if (selected) Accent else Hairline, shape)
+            .eyePress(onClick = onClick)
+            .padding(horizontal = EyeSpace.xs, vertical = EyeSpace.sm),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) Ink else TextSecondary,
+            maxLines = 1,
+        )
     }
 }
 
 private val nudgeChoices = listOf(0, 3, 5, 10)
+private val limitChoices = listOf(0 to "off", 15 to "15m", 30 to "30m", 45 to "45m", 60 to "1h")
+
+/** Which feeds are actually covered, grouped by app. Read from the same map the service uses. */
+private fun armedSurfaces(settings: Settings): List<String> =
+    PlatformCatalog.all.mapNotNull { platform ->
+        val config = settings.platforms[platform.id] ?: return@mapNotNull null
+        if (!config.enabled) return@mapNotNull null
+        val labels = platform.surfaces
+            .filter { surface -> (config.surfaces[surface.id]?.mode ?: BlockMode.OFF) != BlockMode.OFF }
+            .map { surface -> surface.label.lowercase() }
+        if (labels.isEmpty()) null else "${platform.name.lowercase()}: ${labels.joinToString(", ")}"
+    }
+
+private fun clockLabel(minuteOfDay: Int): String {
+    val h = minuteOfDay / 60 % 24
+    val m = minuteOfDay % 60
+    val suffix = if (h < 12) "am" else "pm"
+    val hour12 = when {
+        h == 0 -> 12
+        h > 12 -> h - 12
+        else -> h
+    }
+    return if (m == 0) "$hour12$suffix" else "$hour12:${"%02d".format(m)}$suffix"
+}
 
 private fun platformStateLabel(platform: Platform, config: PlatformConfig?): String {
     if (config?.enabled != true) return "off"
@@ -309,21 +457,4 @@ private fun platformStateLabel(platform: Platform, config: PlatformConfig?): Str
         (config.surfaces[surface.id]?.mode ?: BlockMode.OFF) != BlockMode.OFF
     }
     return if (active > 0) "$active on" else "on"
-}
-
-@Composable
-private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-            .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected) Ink else TextSecondary,
-        )
-    }
 }

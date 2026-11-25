@@ -1,8 +1,6 @@
 package com.example.openmind.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +25,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.openmind.data.BlockEvent
 import com.example.openmind.data.PlatformCatalog
@@ -34,23 +33,31 @@ import com.example.openmind.data.UsageSnapshot
 import com.example.openmind.data.WatchRecord
 import com.example.openmind.domain.AttentionStats
 import com.example.openmind.domain.Coach
+import com.example.openmind.domain.SurfaceAttention
 import com.example.openmind.domain.TimeTranslation
 import com.example.openmind.domain.Voice
 import com.example.openmind.ui.components.BarChart
 import com.example.openmind.ui.components.Divider
+import com.example.openmind.ui.components.DisclosureRow
 import com.example.openmind.ui.components.GhostButton
 import com.example.openmind.ui.components.HourlyChart
+import com.example.openmind.ui.components.IconTile
 import com.example.openmind.ui.components.MiniMetric
 import com.example.openmind.ui.components.Monogram
 import com.example.openmind.ui.components.OMCard
 import com.example.openmind.ui.components.PrimaryButton
+import com.example.openmind.ui.components.Revealed
 import com.example.openmind.ui.components.ScreenHeader
+import com.example.openmind.ui.components.SegmentedControl
 import com.example.openmind.ui.components.SectionLabel
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
 import com.example.openmind.ui.theme.AccentDim
-import com.example.openmind.ui.theme.Hairline
-import com.example.openmind.ui.theme.Ink
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.SurfaceOne
+import com.example.openmind.ui.theme.SurfaceThree
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
 import com.example.openmind.ui.theme.TextTertiary
@@ -62,10 +69,11 @@ import kotlin.math.abs
 /**
  * The numbers page.
  *
- * The default view stays short: a hero total, a compact per-app breakdown and one trend. Everything
- * that reads as commentary - the translations, the observations, the plan prompt and whole-app screen
- * time - lives behind a single "advanced" row so it never drops a capability, only its prominence.
- * Every figure is the person's own tracked history; clips and swipes remain labelled as estimates.
+ * A person arrives here with a feeling, not a question: "am I doing badly?" So the page leads with one
+ * number, never a grade, and puts every judgement behind a disclosure they open on purpose. The
+ * breakdown repeats the shape of the today list on purpose - same rows, same bars - because
+ * recognition is cheaper than decoding, and a page that looks like the page you already learned is a
+ * page you can read at a glance.
  */
 @Composable
 fun InsightsScreen(
@@ -76,6 +84,7 @@ fun InsightsScreen(
     onGrantUsage: () -> Unit,
     onRefresh: () -> Unit,
     onOpenPlan: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var range by rememberSaveable { mutableIntStateOf(0) }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
@@ -103,38 +112,53 @@ fun InsightsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 22.dp),
+        contentPadding = PaddingValues(
+            start = EyeSpace.screen,
+            top = EyeSpace.lg,
+            end = EyeSpace.screen,
+            bottom = EyeSpace.xxxl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(EyeSpace.between),
     ) {
-        item { ScreenHeader(title = "the numbers", subtitle = "no grades.") }
-        item { Spacer(Modifier.height(16.dp)) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("today", "7d", "30d").forEachIndexed { index, label ->
-                    val selected = range == index
-                    Box(
-                        modifier = Modifier
-                            .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-                            .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-                            .clickable { range = index }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (selected) Ink else TextSecondary,
-                        )
-                    }
-                }
-            }
+            ScreenHeader(
+                title = "the numbers",
+                subtitle = "no grades.",
+                trailing = {
+                    IconTile(
+                        type = "settings",
+                        tint = TextSecondary,
+                        size = 40.dp,
+                        modifier = Modifier.eyePress(onClick = onOpenSettings),
+                    )
+                },
+            )
         }
-        item { Spacer(Modifier.height(16.dp)) }
+
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(20.dp)) {
+            SegmentedControl(
+                options = listOf("today", "7 days", "30 days"),
+                selectedIndex = range,
+                onSelect = { range = it },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
+            OMCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(EyeSpace.xl),
+                glow = if (summary.millis > 0L) Accent else null,
+            ) {
                 Column {
-                    SectionLabel(if (days == 1) "feed time" else "feed time, ${days}d")
-                    Spacer(Modifier.height(8.dp))
-                    Text(formatLong(summary.millis), style = MaterialTheme.typography.displayMedium, color = TextPrimary)
-                    Spacer(Modifier.height(4.dp))
+                    SectionLabel(if (days == 1) "feed time" else "feed time, ${days} days")
+                    Spacer(Modifier.height(EyeSpace.md))
+                    Text(
+                        formatLong(summary.millis),
+                        style = MaterialTheme.typography.displayMedium,
+                        color = TextPrimary,
+                    )
+                    Spacer(Modifier.height(EyeSpace.xs))
                     Text(
                         comparison(summary.millis, previous.millis, deltaMinutes),
                         style = MaterialTheme.typography.bodySmall,
@@ -143,83 +167,39 @@ fun InsightsScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniMetric("${summary.sessions}", "visits", Modifier.weight(1f))
-                MiniMetric(formatShort(summary.longestSessionMs), "longest", Modifier.weight(1f))
-                MiniMetric("${summary.transitions}", "swipes", Modifier.weight(1f))
-                MiniMetric("${summary.exposures}", "clips", Modifier.weight(1f))
-            }
-        }
-        item { Spacer(Modifier.height(8.dp)) }
-        item {
-            Text(
-                "time measured. clips and swipes estimated.",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextTertiary,
-            )
-        }
-        item { Spacer(Modifier.height(24.dp)) }
-        item { SectionLabel("where it went") }
-        item { Spacer(Modifier.height(10.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(16.dp)) {
-                Column {
-                    if (surfaces.isEmpty()) {
-                        Text("nothing in this range.", style = MaterialTheme.typography.bodySmall, color = TextTertiary)
-                    } else {
-                        val shown = surfaces.take(6)
-                        val max = shown.maxOf { it.millis }.coerceAtLeast(1L)
-                        shown.forEachIndexed { index, item ->
-                            val platform = PlatformCatalog.byId(item.platformId)
-                            val surface = PlatformCatalog.surface(item.platformId, item.surfaceId)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (platform != null) Monogram(platform, size = 32.dp)
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            platform?.name ?: item.platformId,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = TextPrimary,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        Text(surface?.label ?: item.surfaceId, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(formatShort(item.millis), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                    }
-                                    Spacer(Modifier.height(7.dp))
-                                    Box(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(5.dp)
-                                            .background(SurfaceOne, RoundedCornerShape(100.dp)),
-                                    ) {
-                                        Box(
-                                            Modifier
-                                                .fillMaxWidth((item.millis.toFloat() / max).coerceIn(0f, 1f))
-                                                .height(5.dp)
-                                                .background(
-                                                    if (index == 0) Accent else AccentDim.copy(alpha = 0.55f),
-                                                    RoundedCornerShape(100.dp),
-                                                ),
-                                        )
-                                    }
-                                }
-                            }
-                            if (index != shown.lastIndex) Spacer(Modifier.height(14.dp))
-                        }
-                    }
+            OMCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.md)) {
+                    MiniMetric("${summary.sessions}", "visits", Modifier.weight(1f))
+                    MiniMetric(formatShort(summary.longestSessionMs), "longest", Modifier.weight(1f))
+                    MiniMetric("${summary.transitions}", "swipes", Modifier.weight(1f))
+                    MiniMetric("${summary.exposures}", "clips", Modifier.weight(1f))
                 }
             }
         }
-        item { Spacer(Modifier.height(12.dp)) }
+
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            Column {
+                Text(
+                    "time measured. clips and swipes estimated.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextTertiary,
+                )
+                Spacer(Modifier.height(EyeSpace.xl))
+                SectionLabel("where it went")
+            }
+        }
+        item { WhereItWent(surfaces) }
+
+        item {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                 Column {
                     SectionLabel(if (days == 1) "when" else "by day")
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     if (days == 1) {
                         HourlyChart(hourly)
                     } else {
@@ -238,179 +218,244 @@ fun InsightsScreen(
             }
         }
 
-        item { Spacer(Modifier.height(12.dp)) }
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { showAdvanced = !showAdvanced }
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SectionLabel("advanced", modifier = Modifier.weight(1f))
-                Text(if (showAdvanced) "⌃" else "⌄", color = TextTertiary, style = MaterialTheme.typography.titleMedium)
-            }
+            DisclosureRow(
+                label = "everything else",
+                expanded = showAdvanced,
+                onClick = { showAdvanced = !showAdvanced },
+                hint = if (showAdvanced) null else "translations, screen time, plans",
+            )
         }
 
-        if (showAdvanced) {
-            if (ownAverage > 0L) {
-                item { Spacer(Modifier.height(12.dp)) }
-                item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+        item {
+            Revealed(expanded = showAdvanced) {
+                Column(verticalArrangement = Arrangement.spacedBy(EyeSpace.between)) {
+                    if (ownAverage > 0L) {
+                        NoteCard("compared with you", "an average tracked day is ${formatShort(ownAverage)}.", Voice.noPeerStats)
+                    }
+                    val rate = if (days == 1) TimeTranslation.atThisRate(summary.millis) else null
+                    NoteCard(
+                        title = "in real time",
+                        body = TimeTranslation.oneThing(summary.millis).detail,
+                        note = rate,
+                    )
+                    NoticedCard(
+                        surfaces = surfaces,
+                        peakHour = if (days == 1) peakHour else null,
+                        previous = previous.millis,
+                        deltaMinutes = deltaMinutes,
+                        blockedTotal = blockedTotal,
+                    )
+                    if (reveal != null) NoteCard("how it actually felt", reveal)
+                    if (experiment != null) {
+                        OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
+                            Column {
+                                SectionLabel("one thing to test")
+                                Spacer(Modifier.height(EyeSpace.md))
+                                Text(experiment, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                Spacer(Modifier.height(EyeSpace.md))
+                                PrimaryButton(text = "write it as a plan", onClick = onOpenPlan)
+                            }
+                        }
+                    }
+
+                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                         Column {
-                            SectionLabel("compared with you")
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                "an average tracked day is ${formatShort(ownAverage)}.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary,
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text(Voice.noPeerStats, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                        }
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(12.dp)) }
-            item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                    Column {
-                        Text(TimeTranslation.oneThing(summary.millis).detail, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                        val rate = if (days == 1) TimeTranslation.atThisRate(summary.millis) else null
-                        if (rate != null) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(rate, style = MaterialTheme.typography.bodySmall, color = AccentDim)
-                        }
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(12.dp)) }
-            item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                    Column {
-                        SectionLabel("what we noticed")
-                        Spacer(Modifier.height(10.dp))
-                        val lines = buildList {
-                            surfaces.firstOrNull()?.let {
-                                val platform = PlatformCatalog.byId(it.platformId)?.name ?: it.platformId
-                                add("$platform took the biggest share, ${formatShort(it.millis)}.")
-                            }
-                            if (peakHour != null && days == 1) {
-                                add("most of it around ${hourLabel(peakHour)}.")
-                            }
-                            if (previous.millis > 0L && deltaMinutes != 0) {
-                                add(
-                                    if (deltaMinutes < 0) "${abs(deltaMinutes)} min less than before."
-                                    else "$deltaMinutes min more than before.",
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                SectionLabel("whole app, today", modifier = Modifier.weight(1f))
+                                Text(
+                                    formatMinutes(usage.totalMinutesToday),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
                                 )
                             }
-                            if (blockedTotal > 0) add("blocked $blockedTotal opens.")
-                        }
-                        if (lines.isEmpty()) {
-                            Text("nothing yet. it fills in as the days do.", style = MaterialTheme.typography.bodySmall, color = TextTertiary)
-                        } else {
-                            lines.forEachIndexed { index, line ->
-                                Row {
-                                    Text("·", color = Accent, modifier = Modifier.width(14.dp))
-                                    Text(line, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                                }
-                                if (index != lines.lastIndex) Spacer(Modifier.height(8.dp))
-                            }
-                        }
-                    }
-                }
-            }
-            if (reveal != null) {
-                item { Spacer(Modifier.height(12.dp)) }
-                item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                        Column {
-                            SectionLabel("how it actually felt")
-                            Spacer(Modifier.height(10.dp))
-                            Text(reveal, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-                        }
-                    }
-                }
-            }
-            if (experiment != null) {
-                item { Spacer(Modifier.height(12.dp)) }
-                item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                        Column {
-                            SectionLabel("one thing to test")
-                            Spacer(Modifier.height(10.dp))
-                            Text(experiment, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                            Spacer(Modifier.height(14.dp))
-                            PrimaryButton(text = "write it as a plan", onClick = onOpenPlan)
-                        }
-                    }
-                }
-            }
-            item { Spacer(Modifier.height(24.dp)) }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("whole app, today", modifier = Modifier.weight(1f))
-                    Text(formatMinutes(usage.totalMinutesToday), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                }
-            }
-            item { Spacer(Modifier.height(10.dp)) }
-            if (!usage.granted) {
-                item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                        Column {
-                            Text("screen time is off.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                            Spacer(Modifier.height(12.dp))
-                            GhostButton(text = "let it read screen time", onClick = onGrantUsage)
-                        }
-                    }
-                }
-            } else {
-                item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                        Column {
-                            usage.apps.forEachIndexed { index, app ->
-                                val platform = PlatformCatalog.byId(app.platformId)
-                                if (platform != null) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Monogram(platform, size = 30.dp)
-                                        Spacer(Modifier.width(12.dp))
-                                        Text(
-                                            platform.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = TextPrimary,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        Text(
-                                            if (app.minutesToday == 0) "0m" else formatMinutes(app.minutesToday),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TextSecondary,
-                                        )
-                                    }
-                                    if (index != usage.apps.lastIndex) {
-                                        Spacer(Modifier.height(12.dp))
-                                        Divider()
-                                        Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(EyeSpace.md))
+                            if (!usage.granted) {
+                                Text(
+                                    "screen time is off.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                )
+                                Spacer(Modifier.height(EyeSpace.md))
+                                GhostButton(text = "let it read screen time", onClick = onGrantUsage)
+                            } else {
+                                usage.apps.forEachIndexed { index, app ->
+                                    val platform = PlatformCatalog.byId(app.platformId)
+                                    if (platform != null) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Monogram(platform, size = 30.dp)
+                                            Spacer(Modifier.width(EyeSpace.md))
+                                            Text(
+                                                platform.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = TextPrimary,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            Text(
+                                                if (app.minutesToday == 0) "0m" else formatMinutes(app.minutesToday),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary,
+                                            )
+                                        }
+                                        if (index != usage.apps.lastIndex) {
+                                            Spacer(Modifier.height(EyeSpace.md))
+                                            Divider()
+                                            Spacer(Modifier.height(EyeSpace.md))
+                                        }
                                     }
                                 }
+                                Spacer(Modifier.height(EyeSpace.md))
+                                Text(
+                                    "read on open. never stored, never sent.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AccentDim,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = MinTouch)
+                                        .eyePress(onClick = onRefresh),
+                                )
                             }
-                            Spacer(Modifier.height(12.dp))
-                            Text(
-                                "read on open. never stored, never sent.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextTertiary,
-                                modifier = Modifier.clickable(onClick = onRefresh),
-                            )
                         }
                     }
                 }
             }
         }
-        item { Spacer(Modifier.height(28.dp)) }
     }
 }
 
-private fun experimentLine(surfaces: List<com.example.openmind.domain.SurfaceAttention>, peakHour: Int?, exposures: Int): String? {
+/** Same row shape as the today list: mark, name, number, then a bar that does the comparing. */
+@Composable
+private fun WhereItWent(surfaces: List<SurfaceAttention>) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
+        Column {
+            if (surfaces.isEmpty()) {
+                Text(
+                    "nothing in this range.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextTertiary,
+                )
+            } else {
+                val shown = surfaces.take(6)
+                val max = shown.maxOf { it.millis }.coerceAtLeast(1L)
+                shown.forEachIndexed { index, item ->
+                    val platform = PlatformCatalog.byId(item.platformId)
+                    val surface = PlatformCatalog.surface(item.platformId, item.surfaceId)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (platform != null) Monogram(platform, size = 30.dp)
+                        Spacer(Modifier.width(EyeSpace.md))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    platform?.name ?: item.platformId,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = TextPrimary,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                )
+                                Text(
+                                    surface?.label ?: item.surfaceId,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextTertiary,
+                                )
+                                Spacer(Modifier.width(EyeSpace.md))
+                                Text(
+                                    formatShort(item.millis),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextSecondary,
+                                )
+                            }
+                            Spacer(Modifier.height(EyeSpace.sm))
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(5.dp)
+                                    .background(SurfaceThree, RoundedCornerShape(EyeShape.chip)),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth((item.millis.toFloat() / max).coerceIn(0f, 1f))
+                                        .height(5.dp)
+                                        .background(
+                                            if (index == 0) Accent else AccentDim.copy(alpha = 0.6f),
+                                            RoundedCornerShape(EyeShape.chip),
+                                        ),
+                                )
+                            }
+                        }
+                    }
+                    if (index != shown.lastIndex) Spacer(Modifier.height(EyeSpace.lg))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteCard(title: String, body: String, note: String? = null) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
+        Column {
+            SectionLabel(title)
+            Spacer(Modifier.height(EyeSpace.md))
+            Text(body, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            if (note != null) {
+                Spacer(Modifier.height(EyeSpace.sm))
+                Text(note, style = MaterialTheme.typography.bodySmall, color = AccentDim)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoticedCard(
+    surfaces: List<SurfaceAttention>,
+    peakHour: Int?,
+    previous: Long,
+    deltaMinutes: Int,
+    blockedTotal: Int,
+) {
+    val lines = buildList {
+        surfaces.firstOrNull()?.let {
+            val platform = PlatformCatalog.byId(it.platformId)?.name ?: it.platformId
+            add("$platform took the biggest share, ${formatShort(it.millis)}.")
+        }
+        if (peakHour != null) add("most of it around ${hourLabel(peakHour)}.")
+        if (previous > 0L && deltaMinutes != 0) {
+            add(
+                if (deltaMinutes < 0) "${abs(deltaMinutes)} min less than before."
+                else "$deltaMinutes min more than before.",
+            )
+        }
+        if (blockedTotal > 0) add("blocked $blockedTotal opens.")
+    }
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
+        Column {
+            SectionLabel("what we noticed")
+            Spacer(Modifier.height(EyeSpace.md))
+            if (lines.isEmpty()) {
+                Text(
+                    "nothing yet. it fills in as the days do.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextTertiary,
+                )
+            } else {
+                lines.forEachIndexed { index, line ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .background(Accent, RoundedCornerShape(100.dp)),
+                        )
+                        Spacer(Modifier.width(EyeSpace.md))
+                        Text(line, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                    }
+                    if (index != lines.lastIndex) Spacer(Modifier.height(EyeSpace.sm))
+                }
+            }
+        }
+    }
+}
+
+private fun experimentLine(surfaces: List<SurfaceAttention>, peakHour: Int?, exposures: Int): String? {
     val top = surfaces.firstOrNull() ?: return null
     val platform = PlatformCatalog.byId(top.platformId)?.name ?: top.platformId
     val whenPart = if (peakHour != null) "when it's ${hourLabel(peakHour)} and i reach for $platform" else "when i open $platform"

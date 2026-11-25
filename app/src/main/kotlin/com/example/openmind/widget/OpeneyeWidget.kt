@@ -106,7 +106,9 @@ object OpeneyeWidget {
         val views = RemoteViews(context.packageName, R.layout.openeye_widget)
         views.setTextViewText(
             R.id.widget_label,
-            if (screenMinutes > 0) "openeye · ${UsageStatsRepository.formatMinutes(screenMinutes)} on screen"
+            // A small widget cuts the label mid-word at this size, and "on scre…" reads as a bug.
+            // The header carries the brand plus the one number that needs no explaining.
+            if (screenMinutes > 0) "openeye · ${UsageStatsRepository.formatMinutes(screenMinutes)}"
             else "openeye",
         )
         views.setTextViewText(R.id.widget_big, UsageStatsRepository.formatMinutes(minutes))
@@ -133,8 +135,14 @@ object OpeneyeWidget {
                 },
             )
             views.setViewVisibility(R.id.widget_goal, View.VISIBLE)
+            // The bar is the part read from across the room. Past the number it simply stops filling,
+            // because a bar that overflows reads as a rendering bug rather than as a spent budget.
+            val percent = ((minutes * 100L) / rule).coerceIn(0L, 100L).toInt()
+            views.setInt(R.id.widget_bar, "setProgress", percent)
+            views.setViewVisibility(R.id.widget_bar, View.VISIBLE)
         } else {
             views.setViewVisibility(R.id.widget_goal, View.GONE)
+            views.setViewVisibility(R.id.widget_bar, View.GONE)
         }
 
         val open = PendingIntent.getActivity(

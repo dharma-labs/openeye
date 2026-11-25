@@ -1,7 +1,8 @@
 package com.example.openmind.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -9,7 +10,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +59,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.openmind.ui.components.Divider
 import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.NavGlyph
 import com.example.openmind.ui.screens.FocusScreen
@@ -64,7 +71,13 @@ import com.example.openmind.ui.screens.ShieldsScreen
 import com.example.openmind.ui.screens.TodayScreen
 import com.example.openmind.domain.AttentionStats
 import com.example.openmind.ui.theme.Accent
+import com.example.openmind.ui.theme.AccentSoft
+import com.example.openmind.ui.theme.EyeElevation
+import com.example.openmind.ui.theme.EyeMotion
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.Hairline
 import com.example.openmind.ui.theme.Ink
+import com.example.openmind.ui.theme.Shadow
 import com.example.openmind.ui.theme.SurfaceOne
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
@@ -80,6 +93,8 @@ private val navItems = listOf(
     NavItem("focus", "focus", "focus"),
     NavItem("numbers", "numbers", "insights"),
 )
+
+private val navKeys = navItems.map { it.key }
 
 @Composable
 fun AppRoot(viewModel: AppViewModel) {
@@ -200,7 +215,27 @@ fun AppRoot(viewModel: AppViewModel) {
                     .navigationBarsPadding(),
             ) {
                 Box(modifier = Modifier.weight(1f)) {
-                    Crossfade(targetState = tab, label = "tab") { current ->
+                    AnimatedContent(
+                        targetState = tab,
+                        transitionSpec = {
+                            // Direction follows where the thumb came from, so a tab never reads as a
+                            // page reload. The slide is a twelfth of the screen: enough to feel aimed,
+                            // not enough to make the numbers swim.
+                            val forward = navKeys.indexOf(targetState) >= navKeys.indexOf(initialState)
+                            val dir = if (forward) 1 else -1
+                            (fadeIn(tween(EyeMotion.quick)) +
+                                slideInHorizontally(tween<IntOffset>(EyeMotion.normal, easing = EyeMotion.Standard)) {
+                                    dir * it / 12
+                                })
+                                .togetherWith(
+                                    fadeOut(tween(EyeMotion.instant)) +
+                                        slideOutHorizontally(tween<IntOffset>(EyeMotion.normal, easing = EyeMotion.Standard)) {
+                                            -dir * it / 12
+                                        },
+                                )
+                        },
+                        label = "tab",
+                    ) { current ->
                         when (current) {
                             "today" -> TodayScreen(
                                 settings = settings,
@@ -229,6 +264,7 @@ fun AppRoot(viewModel: AppViewModel) {
                                 onGrantUsage = { AppViewModel.openUsageSettings(context) },
                                 onRefresh = viewModel::refreshUsage,
                                 onOpenPlan = { overlay = "plans" },
+                                onOpenSettings = { overlay = "settings" },
                             )
                             "shields" -> ShieldsScreen(
                                 settings = settings,
@@ -251,6 +287,7 @@ fun AppRoot(viewModel: AppViewModel) {
                             else -> FocusScreen(
                                 settings = settings,
                                 onBack = { tab = "today" },
+                                onOpenSettings = { overlay = "settings" },
                                 onStart = { minutes -> viewModel.startFocus(minutes) },
                                 onStop = viewModel::stopFocus,
                             )
@@ -263,39 +300,65 @@ fun AppRoot(viewModel: AppViewModel) {
     }
 }
 
+/**
+ * Four places, one bar.
+ *
+ * The bar floats so the list can scroll under it, and the active tab gets a soft pill rather than an
+ * underline: a pill is a shape the eye already reads as "you are here", an underline is something you
+ * have to look at the bottom of to interpret. Labels stay visible on every tab - hiding the ones you
+ * are not on saves pixels and costs recall.
+ */
 @Composable
 private fun BottomBar(current: String, onSelect: (String) -> Unit) {
-    Column {
-        Divider()
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceOne)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceAround,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            navItems.forEach { item ->
-                val selected = item.key == current
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { onSelect(item.key) }
-                        .padding(vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 10.dp)
+            .shadow(
+                elevation = EyeElevation.floating,
+                shape = RoundedCornerShape(EyeShape.card),
+                ambientColor = Shadow,
+                spotColor = Shadow,
+                clip = false,
+            )
+            .background(SurfaceOne, RoundedCornerShape(EyeShape.card))
+            .border(1.dp, Hairline.copy(alpha = 0.7f), RoundedCornerShape(EyeShape.card))
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        navItems.forEach { item ->
+            val selected = item.key == current
+            val pill by animateColorAsState(
+                targetValue = if (selected) AccentSoft else Color.Transparent,
+                animationSpec = tween(EyeMotion.normal, easing = EyeMotion.Standard),
+                label = "navpill",
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = { onSelect(item.key) })
+                    .padding(vertical = 3.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 58.dp, height = 29.dp)
+                            .background(pill, RoundedCornerShape(EyeShape.chip)),
+                    )
                     NavGlyph(
                         type = item.glyph,
                         tint = if (selected) Accent else TextTertiary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        text = item.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) Accent else TextTertiary,
+                        modifier = Modifier.size(21.dp),
                     )
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = item.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) Accent else TextTertiary,
+                )
             }
         }
     }

@@ -9,16 +9,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
@@ -39,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -54,15 +57,21 @@ import com.example.openmind.domain.TimeTranslation
 import com.example.openmind.domain.Voice
 import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.Monogram
+import com.example.openmind.ui.components.OMCard
 import com.example.openmind.ui.components.Pill
 import com.example.openmind.ui.components.PrimaryButton
 import com.example.openmind.ui.components.ProgressRing
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
 import com.example.openmind.ui.theme.AccentDim
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
 import com.example.openmind.ui.theme.Hairline
 import com.example.openmind.ui.theme.Ink
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.OpenEyeTheme
 import com.example.openmind.ui.theme.SurfaceOne
+import com.example.openmind.ui.theme.SurfaceThree
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
 import com.example.openmind.ui.theme.TextTertiary
@@ -199,15 +208,15 @@ private fun BlockScreen(
             )
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 26.dp, vertical = 22.dp),
+            .padding(horizontal = EyeSpace.xxl, vertical = EyeSpace.lg),
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                EyeMark(modifier = Modifier.width(20.dp).height(20.dp), color = Accent)
-                Spacer(Modifier.width(8.dp))
+                EyeMark(modifier = Modifier.size(20.dp), color = Accent)
+                Spacer(Modifier.width(EyeSpace.sm))
                 Text(
                     "openeye",
                     style = MaterialTheme.typography.labelSmall,
@@ -227,15 +236,15 @@ private fun BlockScreen(
             }
 
             Spacer(Modifier.weight(1f))
-            if (platform != null) Monogram(platform, size = 44.dp)
-            Spacer(Modifier.height(16.dp))
+            if (platform != null) Monogram(platform, size = 46.dp)
+            Spacer(Modifier.height(EyeSpace.lg))
             Text(
                 text = surfaceLabel,
                 style = MaterialTheme.typography.headlineMedium,
                 color = TextPrimary,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(EyeSpace.md))
             Text(
                 text = line,
                 style = MaterialTheme.typography.bodyLarge,
@@ -244,12 +253,13 @@ private fun BlockScreen(
             )
 
             if (!strict) {
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(EyeSpace.xxl))
                 ProgressRing(
                     progress = if (seconds == 0) 1f else (8 - seconds) / 8f,
-                    modifier = Modifier.width(140.dp).height(140.dp),
+                    modifier = Modifier.size(150.dp),
                     strokeWidth = 5.dp,
                     color = if (seconds == 0) Accent else AccentDim,
+                    track = SurfaceThree,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
@@ -269,7 +279,7 @@ private fun BlockScreen(
                     }
                 }
             } else {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(EyeSpace.xl))
                 Text(
                     text = when {
                         reason == "FOCUS" -> "this opens when your timer ends."
@@ -283,54 +293,55 @@ private fun BlockScreen(
             }
 
             if (contract.stopRuleMinutes > 0 || plan != null) {
-                Spacer(Modifier.height(20.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(SurfaceOne, RoundedCornerShape(20.dp))
-                        .border(1.dp, Hairline, RoundedCornerShape(20.dp))
-                        .padding(16.dp),
+                Spacer(Modifier.height(EyeSpace.lg))
+                OMCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    padding = PaddingValues(EyeSpace.lg),
+                    raised = false,
                 ) {
-                    if (contract.stopRuleMinutes > 0) {
-                        Text(
-                            "your number: ${contract.stopRuleMinutes}m. today: ${TimeTranslation.hoursText(todayMillis)}.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                        )
-                    }
-                    if (plan != null) {
-                        if (contract.stopRuleMinutes > 0) Spacer(Modifier.height(10.dp))
-                        Text(
-                            "your plan: ${plan.trigger}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextTertiary,
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            plan.action,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = AccentDim,
-                        )
+                    Column {
+                        if (contract.stopRuleMinutes > 0) {
+                            Text(
+                                "your number: ${contract.stopRuleMinutes}m. today: ${TimeTranslation.hoursText(todayMillis)}.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                            )
+                        }
+                        if (plan != null) {
+                            if (contract.stopRuleMinutes > 0) Spacer(Modifier.height(EyeSpace.md))
+                            Text(
+                                "your plan: ${plan.trigger}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextTertiary,
+                            )
+                            Spacer(Modifier.height(EyeSpace.xxs))
+                            Text(
+                                plan.action,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = AccentDim,
+                            )
+                        }
                     }
                 }
             }
 
             if (!strict) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(EyeSpace.xl))
                 Text(Voice.feelPrompt, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(EyeSpace.md))
+                Column(verticalArrangement = Arrangement.spacedBy(EyeSpace.sm)) {
                     Voice.feelWords.chunked(4).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm), modifier = Modifier.fillMaxWidth()) {
                             row.forEach { label ->
                                 val selected = feeling == label
+                                val shape = RoundedCornerShape(EyeShape.chip)
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-                                        .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-                                        .clickable { feeling = if (selected) null else label }
-                                        .padding(vertical = 9.dp),
+                                        .heightIn(min = MinTouch)
+                                        .background(if (selected) Accent else SurfaceOne, shape)
+                                        .border(1.dp, if (selected) Accent else Hairline, shape)
+                                        .eyePress(onClick = { feeling = if (selected) null else label }),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
@@ -345,7 +356,7 @@ private fun BlockScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(EyeSpace.md))
                 TextField(
                     value = hope,
                     onValueChange = { if (it.length <= 90) hope = it },
@@ -359,19 +370,19 @@ private fun BlockScreen(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     textStyle = MaterialTheme.typography.bodyMedium,
+                    // The field paints its own shape. Wrapping a default TextField in a second
+                    // background/border leaves the old 28dp outline showing through the corners.
+                    shape = RoundedCornerShape(EyeShape.field),
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
                         focusedContainerColor = SurfaceOne,
                         unfocusedContainerColor = SurfaceOne,
                         cursorColor = Accent,
-                        focusedIndicatorColor = Accent,
-                        unfocusedIndicatorColor = Hairline,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
                     ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(SurfaceOne, RoundedCornerShape(16.dp))
-                        .border(1.dp, Hairline, RoundedCornerShape(16.dp)),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -381,27 +392,30 @@ private fun BlockScreen(
                     text = if (seconds > 0) "hold on" else "open for 5 min",
                     onClick = { if (seconds == 0) onBypass(feeling, hope) },
                     enabled = seconds == 0,
+                    icon = if (seconds > 0) null else "play",
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(EyeSpace.xxs))
+                // The exit gets the bigger target, not the smaller one. When someone is mid-urge they
+                // scan for the way out; a low-contrast text row is exactly what gets missed.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onLeave)
-                        .padding(vertical = 15.dp),
+                        .heightIn(min = MinTouch + 8.dp)
+                        .eyePress(onClick = onLeave),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text("nah, go back", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
                 }
             } else {
-                PrimaryButton(text = "close it", onClick = onLeave)
-                Spacer(Modifier.height(10.dp))
+                PrimaryButton(text = "close it", onClick = onLeave, icon = "check")
+                Spacer(Modifier.height(EyeSpace.sm))
                 Text(
                     "back's off too. that's this mode.",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextTertiary,
                 )
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(EyeSpace.xs))
         }
     }
 }

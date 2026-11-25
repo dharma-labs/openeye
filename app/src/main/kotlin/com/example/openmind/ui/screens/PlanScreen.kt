@@ -2,7 +2,6 @@ package com.example.openmind.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,20 +30,28 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.openmind.data.AttentionContract
 import com.example.openmind.data.ImplementationPlan
 import com.example.openmind.domain.TimeTranslation
 import com.example.openmind.domain.Voice
+import com.example.openmind.ui.components.ActionCard
+import com.example.openmind.ui.components.EyeIcon
 import com.example.openmind.ui.components.OMCard
 import com.example.openmind.ui.components.PrimaryButton
 import com.example.openmind.ui.components.ScreenHeader
 import com.example.openmind.ui.components.SectionLabel
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
 import com.example.openmind.ui.theme.AccentDim
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
 import com.example.openmind.ui.theme.Hairline
 import com.example.openmind.ui.theme.Ink
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.SurfaceOne
 import com.example.openmind.ui.theme.SurfaceTwo
 import com.example.openmind.ui.theme.TextPrimary
@@ -75,44 +83,42 @@ fun PlanScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(
+            start = EyeSpace.screen,
+            top = EyeSpace.md,
+            end = EyeSpace.screen,
+            bottom = EyeSpace.xxxl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(EyeSpace.between),
     ) {
+        item { ScreenHeader("plans", "decide now, use it later.", onBack = onBack) }
+
         item {
-            ScreenHeader("plans", "decide now, use it later.", onBack = onBack)
-        }
-        item { Spacer(Modifier.height(20.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
                 Column {
                     SectionLabel("your daily number")
-                    Spacer(Modifier.height(14.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(EyeSpace.md))
+                    Column(verticalArrangement = Arrangement.spacedBy(EyeSpace.sm)) {
                         ruleChoices.chunked(4).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm)) {
                                 row.forEach { minutes ->
-                                    val active = contract.stopRuleMinutes == minutes
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .background(if (active) Accent else SurfaceTwo, RoundedCornerShape(14.dp))
-                                            .border(1.dp, if (active) Accent else Hairline, RoundedCornerShape(14.dp))
-                                            .clickable { onSetRule(minutes) }
-                                            .padding(vertical = 12.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            "$minutes",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = if (active) Ink else TextSecondary,
-                                        )
-                                    }
+                                    RuleTile(
+                                        minutes = minutes,
+                                        active = contract.stopRuleMinutes == minutes,
+                                        onClick = { onSetRule(minutes) },
+                                        modifier = Modifier.weight(1f),
+                                    )
                                 }
                             }
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text("minutes of reels + shorts a day", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.xs))
+                    Text(
+                        "minutes of reels + shorts a day",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary,
+                    )
+                    Spacer(Modifier.height(EyeSpace.md))
                     if (contract.stopRuleMinutes > 0) {
                         val signed = if (contract.signedEpochMs > 0) {
                             "yours. today is ${todayMinutes}m."
@@ -134,32 +140,31 @@ fun PlanScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+
         item { SectionLabel("when it happens, then what") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
                 Column {
                     Text(
                         "specific beats motivated.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     PlanField(
                         value = triggerDraft,
                         onValueChange = { triggerDraft = it },
                         placeholder = Voice.planTriggerHint,
                         label = "when",
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     PlanField(
                         value = actionDraft,
                         onValueChange = { actionDraft = it },
                         placeholder = Voice.planActionHint,
                         label = "then",
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     PrimaryButton(
                         text = "add plan",
                         enabled = triggerDraft.isNotBlank() && actionDraft.isNotBlank(),
@@ -172,7 +177,7 @@ fun PlanScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(18.dp)) }
+
         if (plans.isEmpty()) {
             item {
                 Text(
@@ -183,70 +188,86 @@ fun PlanScreen(
             }
         } else {
             plans.forEach { plan ->
-                item { Spacer(Modifier.height(10.dp)) }
                 item {
-                    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(16.dp)) {
+                    OMCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        padding = PaddingValues(EyeSpace.lg),
+                        raised = plan.enabled,
+                    ) {
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
-                                        .size(9.dp)
+                                        .size(8.dp)
                                         .background(if (plan.enabled) Accent else Hairline, CircleShape),
                                 )
-                                Spacer(Modifier.width(10.dp))
+                                Spacer(Modifier.width(EyeSpace.sm))
                                 Text(
-                                    if (plan.enabled) "armed" else "off",
+                                    if (plan.enabled) "armed" else "parked",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (plan.enabled) AccentDim else TextTertiary,
                                     modifier = Modifier.weight(1f),
                                 )
-                                Text(
-                                    "delete",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = TextTertiary,
+                                Box(
                                     modifier = Modifier
-                                        .clickable { onRemovePlan(plan.id) }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
+                                        .size(MinTouch)
+                                        .clip(RoundedCornerShape(EyeShape.field))
+                                        .eyePress(onClick = { onRemovePlan(plan.id) }),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    EyeIcon("close", tint = TextTertiary, size = 17.dp)
+                                }
                             }
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(EyeSpace.md))
                             Text("when", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(EyeSpace.xxs))
                             Text(plan.trigger, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(EyeSpace.sm))
                             Text("then", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                            Spacer(Modifier.height(2.dp))
+                            Spacer(Modifier.height(EyeSpace.xxs))
                             Text(plan.action, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                            Spacer(Modifier.height(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .background(SurfaceTwo, RoundedCornerShape(100.dp))
-                                    .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                                    .clickable { onTogglePlan(plan.id, !plan.enabled) }
-                                    .padding(horizontal = 13.dp, vertical = 8.dp),
-                            ) {
-                                Text(
-                                    if (plan.enabled) "park it" else "arm it",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = TextSecondary,
-                                )
-                            }
+                            Spacer(Modifier.height(EyeSpace.md))
+                            ActionCard(
+                                label = if (plan.enabled) "park it" else "arm it",
+                                onClick = { onTogglePlan(plan.id, !plan.enabled) },
+                                emphasized = !plan.enabled,
+                                icon = if (plan.enabled) "minus" else "check",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
                 }
             }
         }
-        item { Spacer(Modifier.height(22.dp)) }
+
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(16.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                 Column {
                     SectionLabel("what we don't do")
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(EyeSpace.sm))
                     Text(Voice.noStreaks, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
         }
-        item { Spacer(Modifier.height(30.dp)) }
+    }
+}
+
+@Composable
+private fun RuleTile(minutes: Int, active: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(EyeShape.control)
+    Box(
+        modifier = modifier
+            .heightIn(min = MinTouch)
+            .background(if (active) Accent else SurfaceTwo, shape)
+            .border(1.dp, if (active) Accent else Hairline, shape)
+            .eyePress(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "$minutes",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (active) Ink else TextSecondary,
+        )
     }
 }
 
@@ -254,7 +275,7 @@ fun PlanScreen(
 private fun PlanField(value: String, onValueChange: (String) -> Unit, placeholder: String, label: String) {
     Column {
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(EyeSpace.xs))
         TextField(
             value = value,
             onValueChange = onValueChange,
@@ -262,19 +283,19 @@ private fun PlanField(value: String, onValueChange: (String) -> Unit, placeholde
             placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium, color = TextTertiary) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
             textStyle = MaterialTheme.typography.bodyMedium,
+            // The field paints its own shape; a second background/border around it leaves the
+            // default 28dp outline showing through the corners.
+            shape = RoundedCornerShape(EyeShape.field),
             colors = TextFieldDefaults.colors(
                 focusedTextColor = TextPrimary,
                 unfocusedTextColor = TextPrimary,
                 focusedContainerColor = SurfaceOne,
                 unfocusedContainerColor = SurfaceOne,
                 cursorColor = Accent,
-                focusedIndicatorColor = Accent,
-                unfocusedIndicatorColor = Hairline,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
             ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceOne, RoundedCornerShape(14.dp))
-                .border(1.dp, Hairline, RoundedCornerShape(14.dp)),
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

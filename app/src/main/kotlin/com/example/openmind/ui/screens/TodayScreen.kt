@@ -1,23 +1,23 @@
 package com.example.openmind.ui.screens
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,8 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.openmind.data.BlockEvent
 import com.example.openmind.data.PlatformCatalog
@@ -49,22 +49,35 @@ import com.example.openmind.domain.Voice
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.SummaryShare
 import com.example.openmind.ui.components.Divider
+import com.example.openmind.ui.components.DisclosureRow
+import com.example.openmind.ui.components.EyeIcon
 import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.HourlyChart
+import com.example.openmind.ui.components.IconCircle
 import com.example.openmind.ui.components.MiniMetric
 import com.example.openmind.ui.components.Monogram
-import com.example.openmind.ui.components.NavGlyph
 import com.example.openmind.ui.components.OMCard
+import com.example.openmind.ui.components.Pill
+import com.example.openmind.ui.components.PrimaryButton
+import com.example.openmind.ui.components.ProgressRing
+import com.example.openmind.ui.components.SectionHeader
 import com.example.openmind.ui.components.SectionLabel
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
 import com.example.openmind.ui.theme.AccentDim
 import com.example.openmind.ui.theme.AccentSoft
+import com.example.openmind.ui.theme.EyeMotion
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
 import com.example.openmind.ui.theme.Hairline
 import com.example.openmind.ui.theme.Ink
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.SurfaceOne
+import com.example.openmind.ui.theme.SurfaceThree
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
 import com.example.openmind.ui.theme.TextTertiary
+import com.example.openmind.ui.theme.Warn
 import com.example.openmind.ui.todayEpochDay
 import java.time.LocalDate
 import java.time.LocalTime
@@ -72,10 +85,10 @@ import java.time.LocalTime
 /**
  * Today, built to be read in one second.
  *
- * The rule for this screen: a measured number, one short line under it, one action, then the list
- * of where the time actually went. Every sentence that explained the app, or the data, now lives
- * behind "today in detail" - nothing was removed, only folded away, so the first paint stays calm.
- * Clip counts are the only estimate on the page, and the footnote under the list says so.
+ * One ring, one number, one sentence, one button. The ring carries the only judgement the app makes:
+ * how far toward the number you chose while you were calm. Colour does that work so no sentence has
+ * to. Everything explanatory folds under "today in detail" - nothing deleted, only put one tap away,
+ * so the first paint stays quiet enough to actually look at.
  */
 @Composable
 fun TodayScreen(
@@ -115,77 +128,111 @@ fun TodayScreen(
     val armed = settings.plans.count { it.enabled }
     val hasData = summary.millis > 0L
     val cta = message.cta
+
+    val rule = settings.contract.stopRuleMinutes
+    val ruleMillis = rule * 60_000L
+    val over = hasData && rule > 0 && summary.millis >= ruleMillis
+    val fraction = when {
+        !hasData -> 0f
+        rule > 0 -> summary.millis.toFloat() / ruleMillis.toFloat()
+        else -> 1f
+    }
+    // Amber, never red. The number is a fact; the ring is weather, not a verdict.
+    // With no stop rule there is nothing to be a fraction of, so the ring stays empty and quiet:
+    // accent only ever means "measured against the number you chose".
+    val ringColor = when {
+        !hasData || rule <= 0 -> Hairline
+        fraction >= 1f -> Warn
+        else -> Accent
+    }
+    val ringProgress = if (rule > 0) fraction else 0f
+    val status = when {
+        !hasData -> "nothing yet"
+        rule <= 0 -> "no limit set"
+        over -> "${formatShort(summary.millis - ruleMillis)} past"
+        else -> "${formatShort(ruleMillis - summary.millis)} left"
+    }
+
     var details by rememberSaveable { mutableStateOf(false) }
     // Read in this scope, not inside the LazyColumn DSL, so toggling it recomposes the screen.
     val showDetails = details
 
     LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(EyeSpace.screen, EyeSpace.md, EyeSpace.screen, EyeSpace.xxxl),
+        verticalArrangement = Arrangement.spacedBy(EyeSpace.between),
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                EyeMark(modifier = Modifier.size(20.dp), color = Accent)
-                Spacer(Modifier.width(9.dp))
+                EyeMark(modifier = Modifier.size(22.dp), color = Accent)
+                Spacer(Modifier.width(EyeSpace.md))
                 Text(
                     "openeye",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelLarge,
                     color = Accent,
                     modifier = Modifier.weight(1f),
                 )
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(onClick = onOpenSettings),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    NavGlyph(type = "settings", tint = TextSecondary, modifier = Modifier.size(22.dp))
-                }
+                IconCircle(onClick = onOpenSettings, icon = "settings", tint = TextSecondary)
             }
         }
 
-        item { Spacer(Modifier.height(34.dp)) }
         item {
-            val rule = settings.contract.stopRuleMinutes
-            Column {
-                SectionLabel("feed time")
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = if (hasData) TimeTranslation.hoursText(summary.millis) else "0m",
-                        style = MaterialTheme.typography.displayLarge,
-                        color = TextPrimary,
-                    )
-                    if (rule > 0) {
-                        Spacer(Modifier.width(10.dp))
+            OMCard(
+                modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(EyeSpace.xl),
+                glow = Accent,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ProgressRing(
+                        progress = ringProgress,
+                        modifier = Modifier.size(148.dp),
+                        strokeWidth = 11.dp,
+                        color = ringColor,
+                        track = SurfaceThree,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if (hasData) TimeTranslation.hoursText(summary.millis) else "0m",
+                                style = MaterialTheme.typography.headlineLarge,
+                                color = TextPrimary,
+                                maxLines = 1,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = if (rule > 0) "of ${rule}m" else "in feeds",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextTertiary,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(EyeSpace.md))
+                    Column(modifier = Modifier.weight(1f)) {
+                        SectionLabel("today")
+                        Spacer(Modifier.height(EyeSpace.md))
+                        Pill(text = status, color = if (over) Warn else if (hasData) Accent else TextTertiary)
+                        Spacer(Modifier.height(EyeSpace.md))
                         Text(
-                            text = "of ${rule}m",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (hasData && summary.millis >= rule * 60_000L) AccentDim else TextTertiary,
-                            modifier = Modifier.padding(bottom = 10.dp),
+                            text = if (hasData) TimeTranslation.oneThing(summary.millis).detail else message.secondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
                         )
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = if (hasData) TimeTranslation.oneThing(summary.millis).detail else "nothing tracked yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                )
             }
         }
 
         if (!permissions.accessibility) {
-            item { Spacer(Modifier.height(18.dp)) }
-            item { SetupLine(onEnableAccessibility = onEnableAccessibility) }
-        }
-
-        if (cta != null) {
-            item { Spacer(Modifier.height(18.dp)) }
+            item { SetupCard(onEnableAccessibility = onEnableAccessibility) }
+        } else if (cta != null) {
             item {
-                ActionLine(
+                PrimaryButton(
                     text = cta,
+                    icon = when (message.target) {
+                        "plan" -> "target"
+                        "focus" -> "clock"
+                        "reentry" -> "spark"
+                        else -> "chart"
+                    },
                     onClick = when (message.target) {
                         "plan" -> onOpenPlan
                         "focus" -> onOpenFocus
@@ -196,8 +243,7 @@ fun TodayScreen(
             }
         }
 
-        if (Coach.isLapse(summary.millis, settings.contract) && settings.lapseHandledDay != day) {
-            item { Spacer(Modifier.height(12.dp)) }
+        if (over && settings.lapseHandledDay != day) {
             item {
                 LapseCard(
                     onAnswer = { cause ->
@@ -205,15 +251,19 @@ fun TodayScreen(
                         onDismissLapse()
                     },
                     onSkip = onDismissLapse,
+                    onBreathe = onStartReentry,
                 )
             }
         }
 
-        item { Spacer(Modifier.height(30.dp)) }
-        item { SectionLabel("what you watched") }
-        item { Spacer(Modifier.height(4.dp)) }
-        item { WatchRows(surfaces, onOpenInsights = onOpenInsights) }
-        item { Spacer(Modifier.height(10.dp)) }
+        item {
+            SectionHeader(
+                text = "what you watched",
+                action = if (surfaces.size > 4) "all numbers" else null,
+                onAction = onOpenInsights,
+            )
+        }
+        item { WatchRows(surfaces) }
         item {
             Text(
                 "time is measured. clip counts are estimates.",
@@ -222,7 +272,6 @@ fun TodayScreen(
             )
         }
 
-        item { Spacer(Modifier.height(20.dp)) }
         item {
             Chips(
                 armed = armed,
@@ -233,14 +282,23 @@ fun TodayScreen(
             )
         }
 
-        item { Spacer(Modifier.height(26.dp)) }
-        item { FeelingCheck(checkedInToday = checkedInToday, reveal = reveal, onPick = onLogFeeling) }
+        item {
+            FeelingCheck(
+                checkedInToday = checkedInToday,
+                reveal = reveal,
+                onPick = onLogFeeling,
+            )
+        }
 
-        item { Spacer(Modifier.height(20.dp)) }
-        item { DetailsRow(expanded = showDetails, onClick = { details = !details }) }
+        item {
+            DisclosureRow(
+                label = if (showDetails) "hide the detail" else "today in detail",
+                expanded = showDetails,
+                onClick = { details = !details },
+            )
+        }
 
         if (showDetails) {
-            item { Spacer(Modifier.height(14.dp)) }
             item {
                 DetailCard(
                     secondary = if (hasData) message.secondary else null,
@@ -249,17 +307,15 @@ fun TodayScreen(
                     blocksToday = blocksToday,
                 )
             }
-            item { Spacer(Modifier.height(12.dp)) }
             item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
                     Column {
                         SectionLabel("when it happened")
-                        Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(EyeSpace.lg))
                         HourlyChart(hourly)
                     }
                 }
             }
-            item { Spacer(Modifier.height(12.dp)) }
             item {
                 SummaryCard(
                     daySummary = summary,
@@ -271,123 +327,132 @@ fun TodayScreen(
             }
         }
 
-        item { Spacer(Modifier.height(26.dp)) }
         item {
             Text(
                 "all of this stayed on your phone.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextTertiary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
-        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
-/** Setup is one row and one button. The two sentences that used to explain it are gone for good. */
+/**
+ * Setup is one card with one button in it. The old version explained the switch in two sentences and
+ * buried the switch; someone who has to read to find a button will not find the button.
+ */
 @Composable
-private fun SetupLine(onEnableAccessibility: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(AccentSoft, RoundedCornerShape(18.dp))
-            .border(1.dp, AccentDim.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun SetupCard(onEnableAccessibility: () -> Unit) {
+    OMCard(
+        modifier = Modifier.fillMaxWidth(),
+        padding = PaddingValues(EyeSpace.xl),
+        surface = AccentSoft,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("one switch to start", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-            Spacer(Modifier.height(3.dp))
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EyeIcon("shield", tint = Accent, size = 20.dp)
+                Spacer(Modifier.width(EyeSpace.md))
+                Text(
+                    "one switch to start",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(EyeSpace.sm))
             Text(
                 "in the list: openeye → use openeye's service.",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+            )
+            Spacer(Modifier.height(EyeSpace.lg))
+            PrimaryButton(text = "open the switch", icon = "forward", onClick = onEnableAccessibility)
+        }
+    }
+}
+
+/**
+ * Where the time went. The bar is the same measured number as the text, scaled against the biggest
+ * feed today - shape before reading, so the ranking is legible without decoding a single digit.
+ */
+@Composable
+private fun WatchRows(surfaces: List<SurfaceAttention>) {
+    if (surfaces.isEmpty()) {
+        OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl), raised = false) {
+            Text(
+                "no feeds detected today.",
+                style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
             )
         }
-        Spacer(Modifier.width(12.dp))
-        Box(
-            modifier = Modifier
-                .background(Accent, RoundedCornerShape(100.dp))
-                .clickable(onClick = onEnableAccessibility)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        ) {
-            Text("open the switch", style = MaterialTheme.typography.labelMedium, color = Ink)
-        }
-    }
-}
-
-@Composable
-private fun ActionLine(text: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SurfaceOne, RoundedCornerShape(18.dp))
-            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 15.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, style = MaterialTheme.typography.titleMedium, color = Accent, modifier = Modifier.weight(1f))
-        Text("→", style = MaterialTheme.typography.titleMedium, color = Accent)
-    }
-}
-
-/** Where the time went: name, measured time, estimated clips. No caption per row. */
-@Composable
-private fun WatchRows(surfaces: List<SurfaceAttention>, onOpenInsights: () -> Unit) {
-    if (surfaces.isEmpty()) {
-        Text(
-            "no feeds detected today.",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextTertiary,
-        )
         return
     }
-    val shown = if (surfaces.size > 5) surfaces.subList(0, 5) else surfaces
+    val shown = surfaces.take(4)
+    val max = surfaces.maxOf { it.millis }.coerceAtLeast(1L)
 
-    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(vertical = 2.dp)) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(vertical = EyeSpace.xs)) {
         Column {
             shown.forEachIndexed { index, item ->
                 val platform = PlatformCatalog.byId(item.platformId)
                 val surface = PlatformCatalog.surface(item.platformId, item.surfaceId)
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
                 ) {
-                    if (platform != null) {
-                        Monogram(platform, size = 30.dp)
-                        Spacer(Modifier.width(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (platform != null) {
+                            Monogram(platform, size = 28.dp)
+                            Spacer(Modifier.width(EyeSpace.md))
+                        }
+                        Text(
+                            text = "${platform?.name ?: item.platformId} · ${surface?.label ?: item.surfaceId}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.width(EyeSpace.md))
+                        Text(
+                            formatShort(item.millis),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                        )
                     }
+                    Spacer(Modifier.height(EyeSpace.sm))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .background(SurfaceThree, RoundedCornerShape(EyeShape.chip)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth((item.millis.toFloat() / max.toFloat()).coerceIn(0.03f, 1f))
+                                .height(5.dp)
+                                .background(Accent, RoundedCornerShape(EyeShape.chip)),
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "${platform?.name ?: item.platformId} · ${surface?.label ?: item.surfaceId}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        modifier = Modifier.weight(1f),
+                        "${item.exposures} clips",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary,
                     )
-                    Spacer(Modifier.width(12.dp))
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(formatShort(item.millis), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        Text("${item.exposures} clips", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
-                    }
                 }
-                if (index != shown.lastIndex) Divider(modifier = Modifier.padding(horizontal = 14.dp))
+                if (index != shown.lastIndex) Divider(modifier = Modifier.padding(horizontal = EyeSpace.lg))
             }
         }
     }
-
-    if (surfaces.size > shown.size) {
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "all numbers →",
-            style = MaterialTheme.typography.labelMedium,
-            color = AccentDim,
-            modifier = Modifier.clickable(onClick = onOpenInsights),
-        )
-    }
 }
 
+/**
+ * Four shortcuts, one row, no scrolling. A row that clips mid-word reads as a broken layout and
+ * people stop tapping it; equal weights keep every destination visible at once. State is carried by
+ * colour rather than by extra words: an armed plan makes its own chip glow.
+ */
 @Composable
 private fun Chips(
     armed: Int,
@@ -397,85 +462,202 @@ private fun Chips(
     onOpenShields: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm),
     ) {
-        Chip(if (armed == 0) "if-then plans" else "if-then plans · $armed armed", onOpenPlan)
-        Chip("focus timer", onOpenFocus)
-        Chip("quiet hours", onOpenSchedule)
-        Chip("reminders", onOpenShields)
+        Chip("plans", "lock", onOpenPlan, armed > 0, Modifier.weight(1f))
+        Chip("focus", "clock", onOpenFocus, modifier = Modifier.weight(1f))
+        Chip("quiet", "moon", onOpenSchedule, modifier = Modifier.weight(1f))
+        Chip("nudges", "bell", onOpenShields, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun Chip(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(SurfaceOne, RoundedCornerShape(100.dp))
-            .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+private fun Chip(
+    label: String,
+    icon: String,
+    onClick: () -> Unit,
+    active: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(EyeShape.chip)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(if (active) AccentSoft else SurfaceOne, shape)
+            .border(1.dp, if (active) Accent.copy(alpha = 0.45f) else Hairline, shape)
+            .eyePress(onClick = onClick)
+            .padding(horizontal = EyeSpace.md, vertical = EyeSpace.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(EyeSpace.xs),
     ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+        EyeIcon(icon, tint = if (active) Accent else AccentDim, size = 16.dp)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (active) Accent else TextSecondary,
+            maxLines = 1,
+        )
     }
 }
 
-/** The check-in stays on the main view: it is the one thing here that only the person can give. */
+/**
+ * The check-in stays on the main view: it is the one thing here that only the person can give.
+ * Four words show and the rest are one tap away - seven choices at once is a decision, and a decision
+ * is what people skip.
+ */
 @Composable
 private fun FeelingCheck(checkedInToday: Boolean, reveal: String?, onPick: (String) -> Unit) {
+    var more by rememberSaveable { mutableStateOf(false) }
     Column {
         SectionLabel(Voice.feelPrompt)
-        Spacer(Modifier.height(10.dp))
-        feelRows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(EyeSpace.md))
+        val words = if (more) Voice.feelWords else Voice.feelWords.take(4)
+        words.chunked(4).forEach { row ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 row.forEach { word ->
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(if (checkedInToday) SurfaceOne else AccentSoft, RoundedCornerShape(100.dp))
-                            .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                            .clickable(enabled = !checkedInToday) { onPick(word) }
-                            .padding(vertical = 9.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            word,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (checkedInToday) TextTertiary else TextSecondary,
-                            maxLines = 1,
-                        )
-                    }
+                    FeelChip(word, checkedInToday, Modifier.weight(1f)) { onPick(word) }
                 }
-                repeat(feelRowSize - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(EyeSpace.sm))
+        }
+        if (!checkedInToday && Voice.feelWords.size > 4) {
+            Text(
+                text = if (more) "fewer words" else "more words",
+                style = MaterialTheme.typography.labelMedium,
+                color = AccentDim,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(EyeShape.field))
+                    .eyePress(onClick = { more = !more })
+                    .padding(vertical = EyeSpace.xs),
+            )
         }
         val line = reveal ?: if (checkedInToday) "logged. the pattern builds." else null
         if (line != null) {
+            Spacer(Modifier.height(EyeSpace.xs))
             Text(line, style = MaterialTheme.typography.bodySmall, color = AccentDim)
         }
     }
 }
 
 @Composable
-private fun DetailsRow(expanded: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun FeelChip(word: String, done: Boolean, modifier: Modifier = Modifier, onPick: () -> Unit) {
+    val chipBackground by animateColorAsState(
+        targetValue = if (done) SurfaceOne else AccentSoft,
+        animationSpec = tween(EyeMotion.normal),
+        label = "feelpill",
+    )
+    Box(
+        modifier = modifier
+            .height(MinTouch)
+            .clip(RoundedCornerShape(EyeShape.chip))
+            .background(chipBackground, RoundedCornerShape(EyeShape.chip))
+            .border(1.dp, Hairline, RoundedCornerShape(EyeShape.chip))
+            .eyePress(enabled = !done, onClick = onPick),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            if (expanded) "hide the detail" else "today in detail",
-            style = MaterialTheme.typography.titleMedium,
-            color = TextSecondary,
-            modifier = Modifier.weight(1f),
+            word,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (done) TextTertiary else TextSecondary,
+            maxLines = 1,
         )
-        Text(if (expanded) "↑" else "↓", style = MaterialTheme.typography.titleMedium, color = Accent)
+    }
+}
+
+/**
+ * The slip. Normalise, get curious, offer something small. Nothing here says "reset tomorrow",
+ * because the day a plan breaks is exactly the day an app usually loses the person.
+ */
+@Composable
+private fun LapseCard(
+    onAnswer: (String) -> Unit,
+    onSkip: () -> Unit,
+    onBreathe: () -> Unit,
+) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EyeIcon("heart", tint = Warn, size = 18.dp)
+                Spacer(Modifier.width(EyeSpace.md))
+                Text(
+                    Voice.pick(Voice.lapse, LocalTime.now().hour),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(EyeSpace.lg))
+            if (open) {
+                Text(Voice.lapseQuestion, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(EyeSpace.md))
+                lapseRows.forEach { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        row.forEach { cause ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(MinTouch)
+                                    .clip(RoundedCornerShape(EyeShape.chip))
+                                    .background(SurfaceThree, RoundedCornerShape(EyeShape.chip))
+                                    .border(1.dp, Hairline, RoundedCornerShape(EyeShape.chip))
+                                    .eyePress(onClick = { onAnswer(cause) }),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    cause,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                        repeat(lapseRowSize - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    Spacer(Modifier.height(EyeSpace.sm))
+                }
+                Text(
+                    "10 focused minutes takes the night back.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AccentDim,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(EyeShape.field))
+                        .eyePress(onClick = onBreathe)
+                        .padding(vertical = EyeSpace.sm),
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.sm)) {
+                    Text(
+                        "look at it",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Ink,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(EyeShape.chip))
+                            .background(Accent, RoundedCornerShape(EyeShape.chip))
+                            .eyePress(onClick = { open = true })
+                            .padding(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
+                    )
+                    Text(
+                        "drop it",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = TextSecondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(EyeShape.chip))
+                            .border(1.dp, Hairline, RoundedCornerShape(EyeShape.chip))
+                            .eyePress(onClick = onSkip)
+                            .padding(horizontal = EyeSpace.lg, vertical = EyeSpace.md),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -485,15 +667,15 @@ private fun DetailsRow(expanded: Boolean, onClick: () -> Unit) {
  */
 @Composable
 private fun DetailCard(secondary: String?, rate: String?, summary: AttentionSummary, blocksToday: Int) {
-    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
         Column {
             if (secondary != null) {
                 Text(secondary, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(EyeSpace.md))
             }
             if (rate != null) {
                 Text(rate, style = MaterialTheme.typography.bodySmall, color = AccentDim)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(EyeSpace.md))
             }
             if (blocksToday > 0) {
                 Text(
@@ -501,7 +683,7 @@ private fun DetailCard(secondary: String?, rate: String?, summary: AttentionSumm
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                 )
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(EyeSpace.lg))
             }
             Row {
                 MiniMetric("${summary.exposures}", "clips est.", Modifier.weight(1f))
@@ -509,81 +691,13 @@ private fun DetailCard(secondary: String?, rate: String?, summary: AttentionSumm
                 MiniMetric("${summary.sessions}", "visits", Modifier.weight(1f))
                 MiniMetric(formatShort(summary.longestSessionMs), "longest", Modifier.weight(1f))
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(EyeSpace.md))
             Text(
                 TimeTranslation.clipPace(summary.millis, summary.exposures)
                     ?: "auto-advance without a real swipe isn't counted, so this under-reports.",
                 style = MaterialTheme.typography.labelSmall,
                 color = TextTertiary,
             )
-        }
-    }
-}
-
-/**
- * The slip. Normalise, get curious, offer something small. Nothing here says "reset tomorrow",
- * because the day a plan breaks is exactly the day an app usually loses the person.
- */
-@Composable
-private fun LapseCard(onAnswer: (String) -> Unit, onSkip: () -> Unit) {
-    var open by rememberSaveable { mutableStateOf(false) }
-    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-        Column {
-            Text(
-                Voice.pick(Voice.lapse, LocalTime.now().hour),
-                style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary,
-            )
-            Spacer(Modifier.height(10.dp))
-            if (open) {
-                Text(Voice.lapseQuestion, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                Spacer(Modifier.height(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    lapseRows.forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            row.forEach { cause ->
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .background(SurfaceOne, RoundedCornerShape(100.dp))
-                                        .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                                        .clickable { onAnswer(cause) }
-                                        .padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(cause, style = MaterialTheme.typography.labelMedium, color = TextSecondary, maxLines = 1)
-                                }
-                            }
-                            repeat(lapseRowSize - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "10 focused minutes takes the night back.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextTertiary,
-                )
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .background(Accent, RoundedCornerShape(100.dp))
-                            .clickable { open = true }
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
-                    ) {
-                        Text("look at it", style = MaterialTheme.typography.labelMedium, color = Ink)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                            .clickable(onClick = onSkip)
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
-                    ) {
-                        Text("drop it", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                    }
-                }
-            }
         }
     }
 }
@@ -600,62 +714,43 @@ private fun SummaryCard(
     val shown = if (weekly) weekSummary else daySummary
     val bars = if (weekly) weekDaily else dayHourly
     val barsLabel = if (weekly) "last 7 days" else "today by hour"
-    // Hoisted out of the draw lambda: the canvas repaints, the list should not be rebuilt each time.
+    // Hoisted out of the draw lambda: the canvas repaints, the list should not be rebuilt each frame.
     val shownBars = remember(bars) { bars.takeLast(24) }
-    val barColor = Accent
-    val idleColor = Hairline.copy(alpha = 0.6f)
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Brush.linearGradient(listOf(AccentSoft, SurfaceOne)), RoundedCornerShape(28.dp))
-            .border(1.dp, AccentDim.copy(alpha = 0.35f), RoundedCornerShape(28.dp))
-            .padding(20.dp),
-    ) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SectionLabel(if (weekly) "this week" else "today", modifier = Modifier.weight(1f))
-                SummaryToggle("day", selected = !weekly) { weekly = false }
-                Spacer(Modifier.width(4.dp))
-                SummaryToggle("week", selected = weekly) { weekly = true }
+                Row(horizontalArrangement = Arrangement.spacedBy(EyeSpace.xs)) {
+                    SummaryToggle("day", selected = !weekly) { weekly = false }
+                    SummaryToggle("week", selected = weekly) { weekly = true }
+                }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(EyeSpace.lg))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(formatShort(shown.millis), style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
-                Spacer(Modifier.width(8.dp))
+                Text(
+                    formatShort(shown.millis),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TextPrimary,
+                )
+                Spacer(Modifier.width(EyeSpace.sm))
                 Text(
                     if (weekly) "last 7 days" else "today",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextTertiary,
+                    modifier = Modifier.padding(bottom = EyeSpace.sm),
                 )
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(EyeSpace.lg))
             Row {
                 SummaryStat("${shown.exposures}", "clips", Modifier.weight(1f))
                 SummaryStat(formatShort(shown.averageItemMs), "per clip", Modifier.weight(1f))
                 SummaryStat("${shown.swipes}", "swipes", Modifier.weight(1f))
                 SummaryStat("${shown.touches}", "taps", Modifier.weight(1f))
             }
-            Spacer(Modifier.height(14.dp))
-            Canvas(modifier = Modifier.fillMaxWidth().height(44.dp)) {
-                val max = (shownBars.maxOrNull() ?: 0L).coerceAtLeast(1L)
-                val count = shownBars.size.coerceAtLeast(1)
-                val step = size.width / count
-                val barWidth = (step * 0.55f).coerceAtLeast(1f)
-                val corner = (barWidth / 2f).coerceAtMost(10f)
-                shownBars.forEachIndexed { index, value ->
-                    val fraction = value.toFloat() / max.toFloat()
-                    val barHeight = (size.height * (0.12f + 0.88f * fraction)).coerceAtMost(size.height)
-                    val x = index * step + (step - barWidth) / 2f
-                    drawRoundRect(
-                        color = if (value > 0L) barColor else idleColor,
-                        topLeft = Offset(x, size.height - barHeight),
-                        size = Size(barWidth, barHeight),
-                        cornerRadius = CornerRadius(corner, corner),
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(EyeSpace.lg))
+            SummaryBars(shownBars)
+            Spacer(Modifier.height(EyeSpace.md))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     barsLabel,
@@ -665,9 +760,12 @@ private fun SummaryCard(
                 )
                 Text(
                     "share it",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     color = Accent,
-                    modifier = Modifier.clickable { onShare(shown, shownBars, barsLabel) },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(EyeShape.field))
+                        .eyePress(onClick = { onShare(shown, shownBars, barsLabel) })
+                        .padding(EyeSpace.sm),
                 )
             }
         }
@@ -675,20 +773,46 @@ private fun SummaryCard(
 }
 
 @Composable
-private fun SummaryToggle(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-            .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 4.dp),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (selected) Ink else TextSecondary,
-        )
+private fun SummaryBars(bars: List<Long>) {
+    val activeColor = Accent
+    val idleColor = Hairline.copy(alpha = 0.5f)
+    Canvas(modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        val max = (bars.maxOrNull() ?: 0L).coerceAtLeast(1L)
+        val count = bars.size.coerceAtLeast(1)
+        val step = size.width / count
+        val barWidth = (step * 0.5f).coerceAtLeast(2f)
+        val corner = barWidth / 2f
+        bars.forEachIndexed { index, value ->
+            val fraction = value.toFloat() / max.toFloat()
+            val barHeight = (size.height * (0.08f + 0.92f * fraction)).coerceAtMost(size.height)
+            drawRoundRect(
+                color = if (value > 0L) activeColor else idleColor,
+                topLeft = Offset(index * step + (step - barWidth) / 2f, size.height - barHeight),
+                size = Size(barWidth, barHeight),
+                cornerRadius = CornerRadius(corner, corner),
+            )
+        }
     }
+}
+
+@Composable
+private fun SummaryToggle(label: String, selected: Boolean, onClick: () -> Unit) {
+    val toggleBackground by animateColorAsState(
+        targetValue = if (selected) Accent else SurfaceOne,
+        animationSpec = tween(EyeMotion.quick),
+        label = "summarytoggle",
+    )
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = if (selected) Ink else TextSecondary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(EyeShape.chip))
+            .background(toggleBackground, RoundedCornerShape(EyeShape.chip))
+            .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(EyeShape.chip))
+            .eyePress(onClick = onClick)
+            .padding(horizontal = EyeSpace.md, vertical = 6.dp),
+    )
 }
 
 @Composable
@@ -700,9 +824,7 @@ private fun SummaryStat(value: String, label: String, modifier: Modifier = Modif
 }
 
 /** Chunked once, at class load: these pools are immutable, so per-recomposition chunking is waste. */
-private const val feelRowSize = 4
 private const val lapseRowSize = 3
-private val feelRows: List<List<String>> = Voice.feelWords.chunked(feelRowSize)
 private val lapseRows: List<List<String>> = Voice.lapseLadder.chunked(lapseRowSize)
 
 private fun formatShort(millis: Long): String {

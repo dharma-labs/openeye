@@ -1,18 +1,16 @@
 package com.example.openmind.ui.screens
 
 import android.content.Intent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.openmind.BuildConfig
@@ -35,21 +33,37 @@ import com.example.openmind.data.BlockEvent
 import com.example.openmind.data.Settings
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.components.Divider
+import com.example.openmind.ui.components.EyeIcon
+import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.GhostButton
+import com.example.openmind.ui.components.IconTile
+import com.example.openmind.ui.components.NavRow
 import com.example.openmind.ui.components.OMCard
-import com.example.openmind.ui.components.OMSwitch
 import com.example.openmind.ui.components.Pill
+import com.example.openmind.ui.components.Revealed
 import com.example.openmind.ui.components.ScreenHeader
+import com.example.openmind.ui.components.SegmentedControl
 import com.example.openmind.ui.components.SectionLabel
 import com.example.openmind.ui.components.ToggleRow
+import com.example.openmind.ui.components.eyePress
 import com.example.openmind.ui.theme.Accent
-import com.example.openmind.ui.theme.Hairline
+import com.example.openmind.ui.theme.AccentDim
+import com.example.openmind.ui.theme.Danger
+import com.example.openmind.ui.theme.EyeShape
+import com.example.openmind.ui.theme.EyeSpace
+import com.example.openmind.ui.theme.MinTouch
 import com.example.openmind.ui.theme.SurfaceOne
-import com.example.openmind.ui.theme.SurfaceTwo
 import com.example.openmind.ui.theme.TextPrimary
 import com.example.openmind.ui.theme.TextSecondary
 import com.example.openmind.ui.theme.TextTertiary
 
+/**
+ * Settings is the one screen where a person is in a deliberate mood, so it can be dense.
+ *
+ * What it must never be is ambiguous: every switch says what it governs, every permission says
+ * whether it is already given, and the privacy text is the literal truth rather than a reassurance.
+ * The order is the order of consequence - what runs, what it may look at, what it keeps.
+ */
 @Composable
 fun SettingsScreen(
     settings: Settings,
@@ -75,109 +89,94 @@ fun SettingsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 22.dp),
+        contentPadding = PaddingValues(
+            start = EyeSpace.screen,
+            top = EyeSpace.lg,
+            end = EyeSpace.screen,
+            bottom = EyeSpace.xxxl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(EyeSpace.between),
     ) {
         item { ScreenHeader(title = "settings", subtitle = "no account. no cloud.", onBack = onBack) }
-        item { Spacer(Modifier.height(20.dp)) }
+
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = EyeSpace.lg, vertical = EyeSpace.sm)) {
                 Column {
                     ToggleRow(
                         title = "shielding",
                         subtitle = "runs all the others.",
                         checked = settings.masterEnabled,
                         onCheckedChange = onMaster,
+                        icon = "shield",
                     )
-                    Spacer(Modifier.height(16.dp))
-                    Divider()
-                    Spacer(Modifier.height(16.dp))
+                    SettingDivider()
                     ToggleRow(
                         title = "strict mode",
                         subtitle = "no way through.",
                         checked = settings.strictMode,
                         onCheckedChange = onStrict,
+                        icon = "lock",
                     )
-                    Spacer(Modifier.height(16.dp))
-                    Divider()
-                    Spacer(Modifier.height(16.dp))
+                    SettingDivider()
                     ToggleRow(
                         title = "count the scroll time",
-                        subtitle = "counts reels and shorts, on this phone.",
+                        subtitle = "reels and shorts, on this phone.",
                         checked = settings.trackingEnabled,
                         onCheckedChange = onTracking,
+                        icon = "chart",
                     )
-                    Spacer(Modifier.height(16.dp))
-                    Divider()
-                    Spacer(Modifier.height(16.dp))
+                    SettingDivider()
                     ToggleRow(
                         title = "corner timer",
                         subtitle = "today's screen time, top left. off inside feeds.",
                         checked = settings.ambientTimer,
                         onCheckedChange = onAmbientTimer,
+                        icon = "clock",
                     )
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
+
         item { SectionLabel("appearance") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(16.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("system" to "system", "dark" to "dark", "light" to "light").forEach { (label, value) ->
-                        val selected = settings.themeMode == value
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .background(if (selected) Accent else SurfaceOne, RoundedCornerShape(100.dp))
-                                .border(1.dp, if (selected) Accent else Hairline, RoundedCornerShape(100.dp))
-                                .clickable { onThemeMode(value) }
-                                .padding(vertical = 9.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (selected) com.example.openmind.ui.theme.Ink else TextSecondary,
-                            )
-                        }
-                    }
-                }
+            SegmentedControl(
+                options = listOf("system", "dark", "light"),
+                selectedIndex = listOf("system", "dark", "light").indexOf(settings.themeMode).coerceAtLeast(0),
+                onSelect = { onThemeMode(listOf("system", "dark", "light")[it]) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        item {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(0.dp)) {
+                NavRow(
+                    title = "daily limits",
+                    onClick = onOpenShields,
+                    subtitle = "set per app in shields",
+                    icon = "target",
+                )
             }
         }
-        item { Spacer(Modifier.height(10.dp)) }
-        item {
-            OMCard(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenShields),
-                padding = PaddingValues(18.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("daily limits", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-                    Text("shields", style = MaterialTheme.typography.labelMedium, color = Accent)
-                }
-            }
-        }
-        item { Spacer(Modifier.height(24.dp)) }
+
         item { SectionLabel("permissions") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(4.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = EyeSpace.md, vertical = EyeSpace.xs)) {
                 Column {
                     PermissionRow(
+                        icon = "shield",
                         title = "screen access",
                         subtitle = "recognises and closes feed surfaces.",
                         granted = permissions.accessibility,
                         onClick = onOpenAccessibility,
                     )
-                    Divider(modifier = Modifier.padding(horizontal = 14.dp))
                     PermissionRow(
+                        icon = "chart",
                         title = "usage access",
                         subtitle = "reads screen time for shielded apps.",
                         granted = permissions.usageAccess,
                         onClick = onOpenUsage,
                     )
-                    Divider(modifier = Modifier.padding(horizontal = 14.dp))
                     PermissionRow(
+                        icon = "bell",
                         title = "notifications",
                         subtitle = "focus and quiet-hours reminders.",
                         granted = permissions.notifications,
@@ -186,28 +185,40 @@ fun SettingsScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
+
         item { SectionLabel("privacy") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                 Column {
                     Text("nothing leaves this phone.", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(EyeSpace.xs))
                     Text(
                         "no account, no tracking. your rules and history stay here.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        if (showDisclosure) "hide the detail" else "what can it actually see?",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Accent,
-                        modifier = Modifier.clickable { showDisclosure = !showDisclosure },
-                    )
-                    if (showDisclosure) {
-                        Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = MinTouch)
+                            .eyePress(onClick = { showDisclosure = !showDisclosure }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "what can it actually see?",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Accent,
+                            modifier = Modifier.weight(1f),
+                        )
+                        EyeIcon(
+                            type = if (showDisclosure) "chevron_up" else "chevron",
+                            tint = Accent,
+                            size = 16.dp,
+                        )
+                    }
+                    Revealed(expanded = showDisclosure) {
+                        Spacer(Modifier.height(EyeSpace.sm))
                         Text(
                             "Window, content and scroll events are filtered by package. Other apps' window changes are used only to remove overlays. For Instagram, YouTube, Facebook, TikTok and Snapchat it reads a bounded tree (max 400 nodes), finds tab labels such as Reels, Explore, Shorts, For You or Spotlight, measures the item with getBoundsInScreen and covers it with a touch-blocking accessibility overlay. If the surface opens another way, it presses Back and shows the block screen. It never reads editable text, passwords or messages, and never stores page content.",
                             style = MaterialTheme.typography.bodySmall,
@@ -217,24 +228,24 @@ fun SettingsScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
+
         item { SectionLabel("data") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.lg)) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("local history", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                            Spacer(Modifier.height(2.dp))
                             Text(
                                 "${events.size} events kept for 30 days",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextTertiary,
                             )
                         }
-                        Pill("on device", color = TextSecondary)
+                        Pill("on device", color = AccentDim)
                     }
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     GhostButton(
                         text = "share a summary",
                         onClick = {
@@ -246,74 +257,65 @@ fun SettingsScreen(
                             }
                             context.startActivity(Intent.createChooser(share, "share summary"))
                         },
+                        icon = "share",
                     )
-                    Spacer(Modifier.height(8.dp))
-                    GhostButton(text = "clear all local data", onClick = { confirmClear = true }, color = com.example.openmind.ui.theme.Danger)
+                    Spacer(Modifier.height(EyeSpace.sm))
+                    GhostButton(
+                        text = "clear all local data",
+                        onClick = { confirmClear = true },
+                        color = Danger,
+                        icon = "close",
+                    )
                 }
             }
         }
-        item { Spacer(Modifier.height(24.dp)) }
+
         item { SectionLabel("about") }
-        item { Spacer(Modifier.height(10.dp)) }
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(EyeSpace.xl)) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        EyeMark(modifier = Modifier.size(26.dp), color = Accent)
+                        Spacer(Modifier.width(EyeSpace.md))
+                        Text("openeye", style = MaterialTheme.typography.titleLarge, color = TextPrimary)
+                        Spacer(Modifier.weight(1f))
                         Text(
-                            "Openeye",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                            style = MaterialTheme.typography.bodySmall,
+                            BuildConfig.VERSION_NAME,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = TextTertiary,
                         )
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     Text(
-                        "counts short-video time, covers the buttons that pull you in",
+                        "counts short-video time, covers the buttons that pull you in.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(EyeSpace.md))
                     Text(
                         "build by Dharmendra",
                         style = MaterialTheme.typography.titleMedium,
                         color = Accent,
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.lg))
                     Divider()
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(EyeSpace.lg))
+                    AboutLine("no account, no ads, no internet permission.")
+                    AboutLine("the accessibility service sees which feed is open and covers a button. it never reads what you type.")
+                    AboutLine("widget: pick \"openeye today\" from your launcher's widget picker.")
+                    Spacer(Modifier.height(EyeSpace.md))
                     Text(
-                        "no account, no ads, no internet permission. everything stays on this phone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "the accessibility service is used to see which feed is open and to cover a button. it never reads what you type.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "widget: pick \"openeye today\" from your launcher's widget picker",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        "revisit setup",
+                        "build ${BuildConfig.VERSION_CODE} · revisit setup",
                         style = MaterialTheme.typography.labelMedium,
                         color = Accent,
-                        modifier = Modifier.clickable(onClick = onShowOnboarding),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = MinTouch)
+                            .eyePress(onClick = onShowOnboarding),
                     )
                 }
             }
         }
-        item { Spacer(Modifier.height(30.dp)) }
     }
 
     if (confirmClear) {
@@ -328,7 +330,7 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     confirmClear = false
                     onClear()
-                }) { Text("clear", color = com.example.openmind.ui.theme.Danger) }
+                }) { Text("clear", color = Danger) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) { Text("keep", color = TextSecondary) }
@@ -338,7 +340,24 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun SettingDivider() {
+    Spacer(Modifier.height(EyeSpace.xxs))
+    Divider(modifier = Modifier.padding(start = 46.dp))
+    Spacer(Modifier.height(EyeSpace.xxs))
+}
+
+@Composable
+private fun AboutLine(text: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Text("·", color = AccentDim, modifier = Modifier.width(EyeSpace.lg))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = TextTertiary)
+    }
+    Spacer(Modifier.height(EyeSpace.xs))
+}
+
+@Composable
 private fun PermissionRow(
+    icon: String,
     title: String,
     subtitle: String,
     granted: Boolean,
@@ -347,20 +366,26 @@ private fun PermissionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .heightIn(min = MinTouch)
+            .clip(RoundedCornerShape(EyeShape.field))
+            .eyePress(onClick = onClick)
+            .padding(horizontal = EyeSpace.sm, vertical = EyeSpace.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        IconTile(type = icon, tint = if (granted) Accent else TextTertiary, size = 36.dp)
+        Spacer(Modifier.width(EyeSpace.md))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
             Spacer(Modifier.height(2.dp))
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextTertiary)
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(EyeSpace.sm))
         Pill(
             text = if (granted) "allowed" else "enable",
             color = if (granted) Accent else TextSecondary,
             filled = granted,
         )
+        Spacer(Modifier.width(EyeSpace.xs))
+        EyeIcon("chevron", tint = TextTertiary, size = 15.dp)
     }
 }
