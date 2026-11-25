@@ -130,8 +130,10 @@ The service runs inside someone else's app while they scroll, so the cost is bou
   420 ms with a fast-out/slow-in curve, so the mark settles instead of snapping. The window is brand
   time, not load time - the data is already there. The sweep is driven from the layout phase
   (`Modifier.offset { }`), not by recomposing the screen.
-- Release builds run R8 with `isShrinkResources`: 1.5 MB against 13.5 MB debug. Not yet exercised
-  on a device, so treat the shrunk artifact as unverified.
+- Release builds run R8 with `isShrinkResources`: 1.5 MB against 13.5 MB debug. The signed output has
+  been run on the emulator end to end - launch, onboarding, contract persistence, block screen, a
+  counting session - so the shrunk artifact is not unproven, but it has not had a full day on a
+  physical phone.
 
 ### What the app will not do to your phone
 
@@ -337,6 +339,12 @@ Artifacts:
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
 - `C:\Users\kumar\Downloads\openeye-4.1.0-debug.apk` - the copy handed over for install testing
 - `C:\Users\kumar\Downloads\openeye-4.1.0-release-unsigned.apk` - for the Galaxy Store upload after signing
+- `C:\Users\kumar\Downloads\openeye-4.1.0-release.apk` - zipaligned + signed (v2, v3), the public download
+- `C:\Users\kumar\.openclaw-autoclaw\workspace\openeye-signing\` - `openeye-release.jks` and
+  `keystore-password.txt`, outside the repo. This key is the only way to ship an update over an
+  installed release build; if it is lost, every user has to uninstall and lose their data.
+- Public release: `https://github.com/dharma-labs/openeye-releases` (this repo holds only the signed
+  apk and the install page; the source stays private here)
 
 ## Verification
 
@@ -437,11 +445,26 @@ on a device, because the burst of wrong guesses they exist to survive could not 
 They are reasoned-about guards, not observed ones. The widget has only run on the Pixel launcher;
 One UI's picker, its resize behaviour and Android 12+'s pin-confirmation dialog are untested.
 
+### The signed R8 release binary (4.1.0)
+
+The 1.5 MB minified output was installed on the same API 36 image - after uninstalling the debug
+build, because the signatures differ - and run through the path a new user walks:
+
+- launched with no `AndroidRuntime` error in logcat; splash, onboarding and all three tabs rendered.
+- accessibility enabled from system settings; the app read it back as `screen access | on`, so the
+  service class survived shrinking and is still discoverable by the system.
+- signed the contract at 30 min / "a scroll leaves you flat" and the recap screen showed both
+  values after a restart, which is the DataStore round-trip holding under R8.
+- a live Reels session, past the block screen: `today 1m · 3 clips / still here 1:14 · 2 swipes /
+  this one 0:23` over reel 3. Counting, the HUD and the block flow all work in the release binary.
+
+What this does not prove: the release build was not put through the multi-hour idle, volume-key and
+widget-drag passes above - those ran against the debug binary of the same commit.
+
 Not verified: no physical device, so OEM accessibility implementations (Xiaomi/Samsung/Huawei kill
 background overlays and rename the accessibility entry) are still unproven - the Samsung/One UI
 behaviour behind the Galaxy Store submission is the open risk. Facebook, Facebook Lite, TikTok and
-Snapchat were never installed here, so their selectors remain catalog guesses. The release APK is
-unsigned and its R8 output has never run, so minification is unproven. Production Instagram,
+Snapchat were never installed here, so their selectors remain catalog guesses. Production Instagram,
 YouTube and Facebook could not be opened on this emulator image (YouTube refuses to run until
 updated), so all feed testing above ran against a local harness app that mimics their window,
 activity and view structure; the catalog class names for the real apps are still unconfirmed here.
