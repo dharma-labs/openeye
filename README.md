@@ -97,4 +97,7 @@ app, so the old settings will not carry over.
 
 GPL-3.0-only. See [LICENSE](LICENSE).
 
+The F-Droid build recipe and the submission steps live in
+[packaging/fdroid](packaging/fdroid/SUBMITTING.md).
+
 Built by Dharmendra.

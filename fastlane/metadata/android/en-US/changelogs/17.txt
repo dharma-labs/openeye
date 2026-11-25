@@ -8,4 +8,4 @@ The whole interface was rebuilt around one measured number.
 
 Because the app id changed, this is a separate app to Android. Uninstall an older Openeye before installing this one - usage history does not carry across.
 
-The counting itself did not change: the accessibility read, the session tracker, the block rules and the overlay safety limits are the same code that shipped in 4.2.0.
+The counting itself did not change: the accessibility read, the session tracker, the block rules and the overlay safety limits are the same code as the previous release.

@@ -1,0 +1,33 @@
+Categories: Internet
+License: GPL-3.0-only
+WebURL: https://github.com/dharma-labs/openeye
+SourceCode: https://github.com/dharma-labs/openeye
+IssueTracker: https://github.com/dharma-labs/openeye/issues
+ChangelogMode: 5
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 5.1.0
+CurrentVersionCode: 17
+
+RepoType: git
+Repo: https://github.com/dharma-labs/openeye.git
+
+Builds:
+  - versionName: 5.1.0
+    versionCode: 17
+    commit: v5.1.0
+    submodules: false
+    gradle:
+      - :app:assembleRelease
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+
+MaintainerNotes: |
+  Single module, `:app`. The release variant runs R8 with resource shrinking and is the variant
+  that has been run on a device, so build that one rather than debug.
+
+  The manifest declares no INTERNET permission at all, so the build must not gain one. If a future
+  dependency pulls it in, that is a reason to stop and look rather than to add an anti-feature.
+
+  `settings.gradle.kts` applies the foojay toolchain resolver, which only reaches the network if no
+  local JDK 17 is found. The build images have one, so this stays a no-op there.
