@@ -16,7 +16,7 @@
         android:letterSpacing="0.08"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textColor="@color/openmind_accent"
+        android:textColor="@color/openeye_accent"
         android:text="openeye" />
 
     <TextView

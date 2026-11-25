@@ -7,4 +7,4 @@
     android:description="@string/accessibility_service_description"
     android:isAccessibilityTool="false"
     android:notificationTimeout="100"
-    android:settingsActivity="com.example.openmind.MainActivity" />
+    android:settingsActivity="io.github.dharma_labs.openeye.MainActivity" />

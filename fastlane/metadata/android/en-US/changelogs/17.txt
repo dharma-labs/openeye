@@ -1,0 +1,11 @@
+The whole interface was rebuilt around one measured number.
+
+- four tabs: today, shields, focus, numbers
+- onboarding and the feed interrupt now fit on one screen each. the way out of the interrupt is always on the screen, never below the fold
+- the accent colour always means "your number", amber always means "past it". nothing is ever red at you
+- the corner timer, the widget and the goal bar show the same number the app actually measured
+- app id changed to io.github.dharma_labs.openeye, and the source is now public under GPL-3.0
+
+Because the app id changed, this is a separate app to Android. Uninstall an older Openeye before installing this one - usage history does not carry across.
+
+The counting itself did not change: the accessibility read, the session tracker, the block rules and the overlay safety limits are the same code that shipped in 4.2.0.

@@ -5,14 +5,14 @@ plugins {
 }
 
 android {
-  namespace = "com.example.openmind"
+  namespace = "io.github.dharma_labs.openeye"
   compileSdk = 37
   defaultConfig {
-    applicationId = "com.example.openmind"
+    applicationId = "io.github.dharma_labs.openeye"
     minSdk = 26
     targetSdk = 37
-    versionCode = 16
-    versionName = "5.0.0"
+    versionCode = 17
+    versionName = "5.1.0"
   }
 
   buildTypes {

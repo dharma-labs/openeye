@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OpenMind" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/openmind_background</item>
-        <item name="android:navigationBarColor">@color/openmind_background</item>
+    <style name="Theme.Openeye" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/openeye_background</item>
+        <item name="android:navigationBarColor">@color/openeye_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 
-    <style name="Theme.OpenMind.Block" parent="Theme.OpenMind">
+    <style name="Theme.Openeye.Block" parent="Theme.Openeye">
         <item name="android:windowDisablePreview">true</item>
-        <item name="android:windowBackground">@color/openmind_background</item>
+        <item name="android:windowBackground">@color/openeye_background</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 </resources>
