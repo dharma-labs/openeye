@@ -249,32 +249,53 @@ fun SettingsScreen(
             OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Openeye", style = MaterialTheme.typography.titleMedium, color = TextPrimary, modifier = Modifier.weight(1f))
-                        Text("v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall, color = TextTertiary)
+                        Text(
+                            "Openeye",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextTertiary,
+                        )
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "built with care by Dharmendra",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Accent,
+                        "counts short-video time, covers the buttons that pull you in",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
                     )
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "reels and shorts get covered. the apps stay.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
+                        "build by Dharmendra",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Accent,
                     )
                     Spacer(Modifier.height(14.dp))
                     Divider()
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        "accessibility use is disclosed here and in onboarding. publishing on Google Play: declare the service, expect a review.",
+                        "no account, no ads, no internet permission. everything stays on this phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "the accessibility service is used to see which feed is open and to cover a button. it never reads what you type.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "widget: pick \"openeye today\" from your launcher's widget picker",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                     )
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        "revisit onboarding",
+                        "revisit setup",
                         style = MaterialTheme.typography.labelMedium,
                         color = Accent,
                         modifier = Modifier.clickable(onClick = onShowOnboarding),

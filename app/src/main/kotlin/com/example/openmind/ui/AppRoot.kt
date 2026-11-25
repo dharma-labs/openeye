@@ -97,8 +97,9 @@ fun AppRoot(viewModel: AppViewModel) {
 
     var splashElapsed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        // Just long enough that the splash is a frame of brand, not a wait.
-        delay(320L)
+        // Long enough to read the mark and the credit, short enough not to be a wait. The real
+        // work is already done by then - this window is brand, not loading.
+        delay(1_100L)
         splashElapsed = true
     }
 
@@ -311,8 +312,8 @@ private fun Splash() {
     )
     val enter = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        // Finishes inside the 320ms splash window so the credit is fully visible before it clears.
-        enter.animateTo(1f, tween(240, easing = FastOutSlowInEasing))
+        // Most of the splash window, so the credit settles and is readable before it clears.
+        enter.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
     }
     Box(
         modifier = Modifier

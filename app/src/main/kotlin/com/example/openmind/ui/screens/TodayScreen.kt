@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,17 +43,18 @@ import com.example.openmind.data.WatchRecord
 import com.example.openmind.domain.AttentionStats
 import com.example.openmind.domain.AttentionSummary
 import com.example.openmind.domain.Coach
+import com.example.openmind.domain.SurfaceAttention
 import com.example.openmind.domain.TimeTranslation
 import com.example.openmind.domain.Voice
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.SummaryShare
+import com.example.openmind.ui.components.Divider
 import com.example.openmind.ui.components.EyeMark
 import com.example.openmind.ui.components.HourlyChart
 import com.example.openmind.ui.components.MiniMetric
 import com.example.openmind.ui.components.Monogram
 import com.example.openmind.ui.components.NavGlyph
 import com.example.openmind.ui.components.OMCard
-import com.example.openmind.ui.components.PrimaryButton
 import com.example.openmind.ui.components.SectionLabel
 import com.example.openmind.ui.theme.Accent
 import com.example.openmind.ui.theme.AccentDim
@@ -65,6 +69,14 @@ import com.example.openmind.ui.todayEpochDay
 import java.time.LocalDate
 import java.time.LocalTime
 
+/**
+ * Today, built to be read in one second.
+ *
+ * The rule for this screen: a measured number, one short line under it, one action, then the list
+ * of where the time actually went. Every sentence that explained the app, or the data, now lives
+ * behind "today in detail" - nothing was removed, only folded away, so the first paint stays calm.
+ * Clip counts are the only estimate on the page, and the footnote under the list says so.
+ */
 @Composable
 fun TodayScreen(
     settings: Settings,
@@ -82,21 +94,30 @@ fun TodayScreen(
     onDismissLapse: () -> Unit,
     onStartReentry: () -> Unit,
 ) {
-    val today = LocalDate.now()
-    val day = today.toEpochDay()
-    val summary = AttentionStats.forDay(watch, day)
-    val yesterday = AttentionStats.forDay(watch, day - 1)
-    val surfaces = AttentionStats.bySurface(watch, day, day)
-    val hourly = AttentionStats.hourly(watch, day)
-    val blocksToday = events.count { it.outcome == "BLOCKED" && todayEpochDay(it.epochMs) == day }
-    val cursor = settings.promptCursor
-    val message = Coach.todayMessage(summary.millis, summary.exposures, settings, cursor)
-    val equivalent = TimeTranslation.oneThing(summary.millis)
+    val context = LocalContext.current
+    val day = LocalDate.now().toEpochDay()
+
+    val summary = remember(watch, day) { AttentionStats.forDay(watch, day) }
+    val surfaces = remember(watch, day) { AttentionStats.bySurface(watch, day, day) }
+    val hourly = remember(watch, day) { AttentionStats.hourly(watch, day) }
+    val hourlyList = remember(hourly) { hourly.toList() }
+    val weekSummary = remember(watch, day) { AttentionStats.summarize(watch, day - 6, day) }
+    val weekDaily = remember(watch, day) { AttentionStats.daily(watch, (day - 6..day).toList()) }
+    val blocksToday = remember(events, day) {
+        events.count { it.outcome == "BLOCKED" && todayEpochDay(it.epochMs) == day }
+    }
+    val message = remember(summary, settings) {
+        Coach.todayMessage(summary.millis, summary.exposures, settings, settings.promptCursor)
+    }
     val rate = TimeTranslation.atThisRate(summary.millis)
-    val lapseVisible = Coach.isLapse(summary.millis, settings.contract) && settings.lapseHandledDay != day
     val reveal = Coach.feelingReveal(settings.feelings)
     val checkedInToday = settings.feelings.any { it.epochDay == day }
-    val context = LocalContext.current
+    val armed = settings.plans.count { it.enabled }
+    val hasData = summary.millis > 0L
+    val cta = message.cta
+    var details by rememberSaveable { mutableStateOf(false) }
+    // Read in this scope, not inside the LazyColumn DSL, so toggling it recomposes the screen.
+    val showDetails = details
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -114,19 +135,6 @@ fun TodayScreen(
                 )
                 Box(
                     modifier = Modifier
-                        .background(SurfaceOne, RoundedCornerShape(100.dp))
-                        .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                        .padding(horizontal = 9.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = "${summary.exposures} clips · ${formatShort(summary.millis)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AccentDim,
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Box(
-                    modifier = Modifier
                         .size(40.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onOpenSettings),
@@ -136,78 +144,59 @@ fun TodayScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(22.dp)) }
+
+        item { Spacer(Modifier.height(34.dp)) }
         item {
-            Text(openingLine(), style = MaterialTheme.typography.headlineLarge, color = TextPrimary)
-        }
-        if (!permissions.accessibility) {
-            item { Spacer(Modifier.height(16.dp)) }
-            item {
-                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                    Column {
+            val rule = settings.contract.stopRuleMinutes
+            Column {
+                SectionLabel("feed time")
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = if (hasData) TimeTranslation.hoursText(summary.millis) else "0m",
+                        style = MaterialTheme.typography.displayLarge,
+                        color = TextPrimary,
+                    )
+                    if (rule > 0) {
+                        Spacer(Modifier.width(10.dp))
                         Text(
-                            "one switch to start",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "it's how the app knows a feed is open. nothing leaves this phone.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "in the list: openeye -> use openeye's service.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextTertiary,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        PrimaryButton(text = "open the switch", onClick = onEnableAccessibility)
-                    }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(16.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(20.dp)) {
-                Column {
-                    SectionLabel("feed time today")
-                    Spacer(Modifier.height(8.dp))
-                    Text(message.primary, style = MaterialTheme.typography.displayLarge, color = TextPrimary)
-                    Spacer(Modifier.height(6.dp))
-                    Text(message.secondary, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                    Spacer(Modifier.height(6.dp))
-                    Text(equivalent.detail, style = MaterialTheme.typography.bodySmall, color = TextTertiary)
-                    if (rate != null) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(rate, style = MaterialTheme.typography.bodySmall, color = AccentDim)
-                    }
-                    if (blocksToday > 0) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "pulled you out $blocksToday ${if (blocksToday == 1) "time" else "times"} today.",
+                            text = "of ${rule}m",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextTertiary,
-                        )
-                    }
-                    val cta = message.cta
-                    if (cta != null) {
-                        Spacer(Modifier.height(16.dp))
-                        PrimaryButton(
-                            text = cta,
-                            onClick = when (message.target) {
-                                "plan" -> onOpenPlan
-                                "focus" -> onOpenFocus
-                                "reentry" -> onStartReentry
-                                else -> onOpenInsights
-                            },
+                            color = if (hasData && summary.millis >= rule * 60_000L) AccentDim else TextTertiary,
+                            modifier = Modifier.padding(bottom = 10.dp),
                         )
                     }
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (hasData) TimeTranslation.oneThing(summary.millis).detail else "nothing tracked yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
             }
         }
-        if (lapseVisible) {
+
+        if (!permissions.accessibility) {
+            item { Spacer(Modifier.height(18.dp)) }
+            item { SetupLine(onEnableAccessibility = onEnableAccessibility) }
+        }
+
+        if (cta != null) {
+            item { Spacer(Modifier.height(18.dp)) }
+            item {
+                ActionLine(
+                    text = cta,
+                    onClick = when (message.target) {
+                        "plan" -> onOpenPlan
+                        "focus" -> onOpenFocus
+                        "reentry" -> onStartReentry
+                        else -> onOpenInsights
+                    },
+                )
+            }
+        }
+
+        if (Coach.isLapse(summary.millis, settings.contract) && settings.lapseHandledDay != day) {
             item { Spacer(Modifier.height(12.dp)) }
             item {
                 LapseCard(
@@ -219,155 +208,316 @@ fun TodayScreen(
                 )
             }
         }
-        item { Spacer(Modifier.height(12.dp)) }
+
+        item { Spacer(Modifier.height(30.dp)) }
+        item { SectionLabel("what you watched") }
+        item { Spacer(Modifier.height(4.dp)) }
+        item { WatchRows(surfaces, onOpenInsights = onOpenInsights) }
+        item { Spacer(Modifier.height(10.dp)) }
         item {
-            FeelingCard(checkedInToday = checkedInToday, reveal = reveal, onPick = onLogFeeling)
-        }
-        item { Spacer(Modifier.height(14.dp)) }
-        item {
-            val armed = settings.plans.count { it.enabled }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable(onClick = onOpenPlan)
-                    .padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "if-then plans",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    if (armed == 0) "make one" else "$armed armed",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("→", style = MaterialTheme.typography.titleMedium, color = Accent)
-            }
-        }
-        item { Spacer(Modifier.height(16.dp)) }
-        item {
-            SummaryCard(
-                daySummary = summary,
-                dayHourly = hourly.toList(),
-                weekSummary = AttentionStats.summarize(watch, day - 6, day),
-                weekDaily = AttentionStats.daily(watch, ((day - 6)..day).toList()),
-                onShare = { picked, bars, label -> SummaryShare.shareAsync(context, picked, bars, label) },
+            Text(
+                "time is measured. clip counts are estimates.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
             )
         }
-        item { Spacer(Modifier.height(26.dp)) }
-        item { SectionLabel("who got the time") }
-        item { Spacer(Modifier.height(10.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(6.dp)) {
-                Column {
-                    if (surfaces.isEmpty()) {
-                        Text(
-                            "no feeds detected today.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextTertiary,
-                            modifier = Modifier.padding(14.dp),
-                        )
-                    } else {
-                        surfaces.take(6).forEachIndexed { index, item ->
-                            val platform = PlatformCatalog.byId(item.platformId)
-                            val surface = PlatformCatalog.surface(item.platformId, item.surfaceId)
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (platform != null) Monogram(platform, size = 34.dp)
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        platform?.name ?: item.platformId,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = TextPrimary,
-                                    )
-                                    Text(
-                                        surface?.blurb ?: item.surfaceId,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextTertiary,
-                                    )
-                                }
-                                Text(formatShort(item.millis), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                            }
-                            if (index != surfaces.take(6).lastIndex) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp)
-                                        .height(1.dp)
-                                        .background(Hairline),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        item { Spacer(Modifier.height(26.dp)) }
-        item { SectionLabel("what a session looks like") }
-        item { Spacer(Modifier.height(10.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                Column {
-                    Row {
-                        MiniMetric("${summary.exposures}", "clips passed", Modifier.weight(1f))
-                        MiniMetric("${summary.transitions}", "swipes seen", Modifier.weight(1f))
-                        MiniMetric("${summary.sessions}", "visits", Modifier.weight(1f))
-                        MiniMetric(formatShort(summary.longestSessionMs), "longest", Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    val pace = TimeTranslation.clipPace(summary.millis, summary.exposures)
-                    Text(
-                        pace ?: "auto-advance without a real swipe isn't counted, so this under-reports.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary,
-                    )
-                }
-            }
-        }
-        item { Spacer(Modifier.height(26.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                Column {
-                    SectionLabel("when it happened")
-                    Spacer(Modifier.height(14.dp))
-                    HourlyChart(hourly)
-                }
-            }
-        }
+
         item { Spacer(Modifier.height(20.dp)) }
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "all of this stayed on your phone.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary,
-                    modifier = Modifier.weight(1f),
+            Chips(
+                armed = armed,
+                onOpenPlan = onOpenPlan,
+                onOpenFocus = onOpenFocus,
+                onOpenSchedule = onOpenSchedule,
+                onOpenShields = onOpenShields,
+            )
+        }
+
+        item { Spacer(Modifier.height(26.dp)) }
+        item { FeelingCheck(checkedInToday = checkedInToday, reveal = reveal, onPick = onLogFeeling) }
+
+        item { Spacer(Modifier.height(20.dp)) }
+        item { DetailsRow(expanded = showDetails, onClick = { details = !details }) }
+
+        if (showDetails) {
+            item { Spacer(Modifier.height(14.dp)) }
+            item {
+                DetailCard(
+                    secondary = if (hasData) message.secondary else null,
+                    rate = rate,
+                    summary = summary,
+                    blocksToday = blocksToday,
                 )
-                Text(
-                    "quiet hours",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = AccentDim,
-                    modifier = Modifier.clickable(onClick = onOpenSchedule),
+            }
+            item { Spacer(Modifier.height(12.dp)) }
+            item {
+                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+                    Column {
+                        SectionLabel("when it happened")
+                        Spacer(Modifier.height(14.dp))
+                        HourlyChart(hourly)
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(12.dp)) }
+            item {
+                SummaryCard(
+                    daySummary = summary,
+                    dayHourly = hourlyList,
+                    weekSummary = weekSummary,
+                    weekDaily = weekDaily,
+                    onShare = { picked, bars, label -> SummaryShare.shareAsync(context, picked, bars, label) },
                 )
             }
         }
-        item { Spacer(Modifier.height(28.dp)) }
+
+        item { Spacer(Modifier.height(26.dp)) }
+        item {
+            Text(
+                "all of this stayed on your phone.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+            )
+        }
+        item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
-private fun openingLine(): String = when (LocalTime.now().hour) {
-    in 5..11 -> "morning."
-    in 12..16 -> "afternoon."
-    in 17..21 -> "evening. the dangerous hours."
-    else -> "it's late. you're here though."
+/** Setup is one row and one button. The two sentences that used to explain it are gone for good. */
+@Composable
+private fun SetupLine(onEnableAccessibility: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AccentSoft, RoundedCornerShape(18.dp))
+            .border(1.dp, AccentDim.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("one switch to start", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+            Spacer(Modifier.height(3.dp))
+            Text(
+                "in the list: openeye → use openeye's service.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(
+            modifier = Modifier
+                .background(Accent, RoundedCornerShape(100.dp))
+                .clickable(onClick = onEnableAccessibility)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Text("open the switch", style = MaterialTheme.typography.labelMedium, color = Ink)
+        }
+    }
+}
+
+@Composable
+private fun ActionLine(text: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceOne, RoundedCornerShape(18.dp))
+            .border(1.dp, Hairline, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium, color = Accent, modifier = Modifier.weight(1f))
+        Text("→", style = MaterialTheme.typography.titleMedium, color = Accent)
+    }
+}
+
+/** Where the time went: name, measured time, estimated clips. No caption per row. */
+@Composable
+private fun WatchRows(surfaces: List<SurfaceAttention>, onOpenInsights: () -> Unit) {
+    if (surfaces.isEmpty()) {
+        Text(
+            "no feeds detected today.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary,
+        )
+        return
+    }
+    val shown = if (surfaces.size > 5) surfaces.subList(0, 5) else surfaces
+
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(vertical = 2.dp)) {
+        Column {
+            shown.forEachIndexed { index, item ->
+                val platform = PlatformCatalog.byId(item.platformId)
+                val surface = PlatformCatalog.surface(item.platformId, item.surfaceId)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (platform != null) {
+                        Monogram(platform, size = 30.dp)
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Text(
+                        text = "${platform?.name ?: item.platformId} · ${surface?.label ?: item.surfaceId}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(formatShort(item.millis), style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                        Text("${item.exposures} clips", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                    }
+                }
+                if (index != shown.lastIndex) Divider(modifier = Modifier.padding(horizontal = 14.dp))
+            }
+        }
+    }
+
+    if (surfaces.size > shown.size) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "all numbers →",
+            style = MaterialTheme.typography.labelMedium,
+            color = AccentDim,
+            modifier = Modifier.clickable(onClick = onOpenInsights),
+        )
+    }
+}
+
+@Composable
+private fun Chips(
+    armed: Int,
+    onOpenPlan: () -> Unit,
+    onOpenFocus: () -> Unit,
+    onOpenSchedule: () -> Unit,
+    onOpenShields: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Chip(if (armed == 0) "if-then plans" else "if-then plans · $armed armed", onOpenPlan)
+        Chip("focus timer", onOpenFocus)
+        Chip("quiet hours", onOpenSchedule)
+        Chip("reminders", onOpenShields)
+    }
+}
+
+@Composable
+private fun Chip(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(SurfaceOne, RoundedCornerShape(100.dp))
+            .border(1.dp, Hairline, RoundedCornerShape(100.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 9.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+    }
+}
+
+/** The check-in stays on the main view: it is the one thing here that only the person can give. */
+@Composable
+private fun FeelingCheck(checkedInToday: Boolean, reveal: String?, onPick: (String) -> Unit) {
+    Column {
+        SectionLabel(Voice.feelPrompt)
+        Spacer(Modifier.height(10.dp))
+        feelRows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { word ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(if (checkedInToday) SurfaceOne else AccentSoft, RoundedCornerShape(100.dp))
+                            .border(1.dp, Hairline, RoundedCornerShape(100.dp))
+                            .clickable(enabled = !checkedInToday) { onPick(word) }
+                            .padding(vertical = 9.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            word,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (checkedInToday) TextTertiary else TextSecondary,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                repeat(feelRowSize - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        val line = reveal ?: if (checkedInToday) "logged. the pattern builds." else null
+        if (line != null) {
+            Text(line, style = MaterialTheme.typography.bodySmall, color = AccentDim)
+        }
+    }
+}
+
+@Composable
+private fun DetailsRow(expanded: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            if (expanded) "hide the detail" else "today in detail",
+            style = MaterialTheme.typography.titleMedium,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(if (expanded) "↑" else "↓", style = MaterialTheme.typography.titleMedium, color = Accent)
+    }
+}
+
+/**
+ * Everything that used to be four cards, in one place: the rotating coach line, the yearly rate,
+ * the session shape, and how often a shield actually fired.
+ */
+@Composable
+private fun DetailCard(secondary: String?, rate: String?, summary: AttentionSummary, blocksToday: Int) {
+    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+        Column {
+            if (secondary != null) {
+                Text(secondary, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                Spacer(Modifier.height(10.dp))
+            }
+            if (rate != null) {
+                Text(rate, style = MaterialTheme.typography.bodySmall, color = AccentDim)
+                Spacer(Modifier.height(10.dp))
+            }
+            if (blocksToday > 0) {
+                Text(
+                    "pulled you out $blocksToday ${if (blocksToday == 1) "time" else "times"} today.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(14.dp))
+            }
+            Row {
+                MiniMetric("${summary.exposures}", "clips est.", Modifier.weight(1f))
+                MiniMetric("${summary.transitions}", "swipes", Modifier.weight(1f))
+                MiniMetric("${summary.sessions}", "visits", Modifier.weight(1f))
+                MiniMetric(formatShort(summary.longestSessionMs), "longest", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                TimeTranslation.clipPace(summary.millis, summary.exposures)
+                    ?: "auto-advance without a real swipe isn't counted, so this under-reports.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+            )
+        }
+    }
 }
 
 /**
@@ -384,16 +534,12 @@ private fun LapseCard(onAnswer: (String) -> Unit, onSkip: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
                 color = TextPrimary,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (open) Voice.lapseQuestion else "no streak to lose.",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
-            )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             if (open) {
+                Text(Voice.lapseQuestion, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                Spacer(Modifier.height(12.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Voice.lapseLadder.chunked(3).forEach { row ->
+                    lapseRows.forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             row.forEach { cause ->
                                 Box(
@@ -408,7 +554,7 @@ private fun LapseCard(onAnswer: (String) -> Unit, onSkip: () -> Unit) {
                                     Text(cause, style = MaterialTheme.typography.labelMedium, color = TextSecondary, maxLines = 1)
                                 }
                             }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                            repeat(lapseRowSize - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -443,51 +589,6 @@ private fun LapseCard(onAnswer: (String) -> Unit, onSkip: () -> Unit) {
 }
 
 @Composable
-private fun FeelingCard(checkedInToday: Boolean, reveal: String?, onPick: (String) -> Unit) {
-    OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-        Column {
-            SectionLabel(Voice.feelPrompt)
-            Spacer(Modifier.height(12.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Voice.feelWords.chunked(4).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        row.forEach { word ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .background(if (checkedInToday) SurfaceOne else AccentSoft, RoundedCornerShape(100.dp))
-                                    .border(1.dp, Hairline, RoundedCornerShape(100.dp))
-                                    .clickable(enabled = !checkedInToday) { onPick(word) }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    word,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (checkedInToday) TextTertiary else TextSecondary,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                reveal ?: if (checkedInToday) {
-                    "logged. the pattern builds."
-                } else {
-                    "one word a day. the pattern gets interesting."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = AccentDim,
-            )
-        }
-    }
-}
-
-@Composable
 private fun SummaryCard(
     daySummary: AttentionSummary,
     dayHourly: List<Long>,
@@ -499,6 +600,8 @@ private fun SummaryCard(
     val shown = if (weekly) weekSummary else daySummary
     val bars = if (weekly) weekDaily else dayHourly
     val barsLabel = if (weekly) "last 7 days" else "today by hour"
+    // Hoisted out of the draw lambda: the canvas repaints, the list should not be rebuilt each time.
+    val shownBars = remember(bars) { bars.takeLast(24) }
     val barColor = Accent
     val idleColor = Hairline.copy(alpha = 0.6f)
 
@@ -517,26 +620,29 @@ private fun SummaryCard(
                 SummaryToggle("week", selected = weekly) { weekly = true }
             }
             Spacer(Modifier.height(12.dp))
-            Text(formatShort(shown.millis), style = MaterialTheme.typography.displayLarge, color = TextPrimary)
-            Text(
-                if (weekly) "reels + shorts, last 7 days" else "reels + shorts, today",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
-            )
-            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(formatShort(shown.millis), style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (weekly) "last 7 days" else "today",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextTertiary,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
             Row {
                 SummaryStat("${shown.exposures}", "clips", Modifier.weight(1f))
                 SummaryStat(formatShort(shown.averageItemMs), "per clip", Modifier.weight(1f))
                 SummaryStat("${shown.swipes}", "swipes", Modifier.weight(1f))
                 SummaryStat("${shown.touches}", "taps", Modifier.weight(1f))
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
             Canvas(modifier = Modifier.fillMaxWidth().height(44.dp)) {
-                val shownBars = bars.takeLast(24)
                 val max = (shownBars.maxOrNull() ?: 0L).coerceAtLeast(1L)
                 val count = shownBars.size.coerceAtLeast(1)
                 val step = size.width / count
                 val barWidth = (step * 0.55f).coerceAtLeast(1f)
+                val corner = (barWidth / 2f).coerceAtMost(10f)
                 shownBars.forEachIndexed { index, value ->
                     val fraction = value.toFloat() / max.toFloat()
                     val barHeight = (size.height * (0.12f + 0.88f * fraction)).coerceAtMost(size.height)
@@ -545,7 +651,7 @@ private fun SummaryCard(
                         color = if (value > 0L) barColor else idleColor,
                         topLeft = Offset(x, size.height - barHeight),
                         size = Size(barWidth, barHeight),
-                        cornerRadius = CornerRadius((barWidth / 2f).coerceAtMost(10f), (barWidth / 2f).coerceAtMost(10f)),
+                        cornerRadius = CornerRadius(corner, corner),
                     )
                 }
             }
@@ -561,7 +667,7 @@ private fun SummaryCard(
                     "share it",
                     style = MaterialTheme.typography.labelMedium,
                     color = Accent,
-                    modifier = Modifier.clickable { onShare(shown, bars, barsLabel) },
+                    modifier = Modifier.clickable { onShare(shown, shownBars, barsLabel) },
                 )
             }
         }
@@ -592,6 +698,12 @@ private fun SummaryStat(value: String, label: String, modifier: Modifier = Modif
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextTertiary)
     }
 }
+
+/** Chunked once, at class load: these pools are immutable, so per-recomposition chunking is waste. */
+private const val feelRowSize = 4
+private const val lapseRowSize = 3
+private val feelRows: List<List<String>> = Voice.feelWords.chunked(feelRowSize)
+private val lapseRows: List<List<String>> = Voice.lapseLadder.chunked(lapseRowSize)
 
 private fun formatShort(millis: Long): String {
     val minutes = millis / 60_000L

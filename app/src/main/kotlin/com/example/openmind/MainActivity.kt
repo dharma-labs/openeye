@@ -29,6 +29,12 @@ class MainActivity : ComponentActivity() {
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    override fun onStart() {
+        super.onStart()
+        // Opening the app is the moment its numbers are known to have moved.
+        com.example.openmind.widget.OpeneyeWidget.updateAll(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

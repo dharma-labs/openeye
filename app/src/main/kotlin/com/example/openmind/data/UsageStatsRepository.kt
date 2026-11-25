@@ -61,19 +61,7 @@ class UsageStatsRepository(private val context: Context) {
                 week = week,
             )
         }
-        UsageSnapshot(true, apps, days, totalMinutesToday(manager))
-    }
-
-    private fun totalMinutesToday(manager: UsageStatsManager): Int {
-        val start = todayStartMillis()
-        val now = System.currentTimeMillis()
-        val stats = runCatching {
-            manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now)
-        }.getOrNull() ?: return 0
-        val millis = stats.groupBy { it.packageName }.values.sumOf { buckets ->
-            buckets.maxOfOrNull { it.totalTimeInForeground } ?: 0L
-        }
-        return (millis / 60_000L).toInt()
+        UsageSnapshot(true, apps, days, totalMinutesToday(context))
     }
 
     fun hasPermission(): Boolean {
@@ -114,6 +102,20 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     companion object {
+        /** Whole-device screen time today, for the home-screen widget's headline. */
+        fun totalMinutesToday(context: Context): Int {
+            val manager = context.getSystemService(UsageStatsManager::class.java) ?: return 0
+            val start = todayStartMillis()
+            val now = System.currentTimeMillis()
+            val stats = runCatching {
+                manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, now)
+            }.getOrNull() ?: return 0
+            val millis = stats.groupBy { it.packageName }.values.sumOf { buckets ->
+                buckets.maxOfOrNull { it.totalTimeInForeground } ?: 0L
+            }
+            return (millis / 60_000L).toInt()
+        }
+
         /** Fast check for app-level budgets, called at most once a minute from the service. */
         fun minutesToday(context: Context, packageName: String): Int {
             val manager = context.getSystemService(UsageStatsManager::class.java) ?: return 0

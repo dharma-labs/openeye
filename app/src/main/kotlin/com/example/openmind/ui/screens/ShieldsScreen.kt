@@ -28,7 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.openmind.data.BlockMode
+import com.example.openmind.data.Platform
 import com.example.openmind.data.PlatformCatalog
+import com.example.openmind.data.PlatformConfig
 import com.example.openmind.data.Settings
 import com.example.openmind.ui.PermissionState
 import com.example.openmind.ui.components.Divider
@@ -65,6 +67,10 @@ fun ShieldsScreen(
 ) {
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     var showMoreApps by rememberSaveable { mutableStateOf(false) }
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
+
+    val coreApps = setOf(PlatformCatalog.INSTAGRAM, PlatformCatalog.YOUTUBE, PlatformCatalog.FACEBOOK)
+    val shownApps = PlatformCatalog.all.filter { showMoreApps || it.id in coreApps }
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -84,30 +90,15 @@ fun ShieldsScreen(
             )
         }
         item { Spacer(Modifier.height(20.dp)) }
+
         item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "strict mode",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = TextPrimary,
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Pill("no bypass", color = AccentDim)
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "locked means locked. everywhere.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextSecondary,
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        OMSwitch(checked = settings.strictMode, onCheckedChange = onStrictChange)
-                    }
+            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("strict mode", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    Spacer(Modifier.width(8.dp))
+                    Pill("no bypass", color = AccentDim)
+                    Spacer(Modifier.weight(1f))
+                    OMSwitch(checked = settings.strictMode, onCheckedChange = onStrictChange)
                 }
             }
         }
@@ -115,12 +106,9 @@ fun ShieldsScreen(
         item { SectionLabel("apps") }
         item { Spacer(Modifier.height(10.dp)) }
 
-        // The three worth shielding out of the box. The rest is opt-in and stays out of the way,
-        // because a stranger should not have to read a list of apps they do not use.
-        val coreApps = setOf(PlatformCatalog.INSTAGRAM, PlatformCatalog.YOUTUBE, PlatformCatalog.FACEBOOK)
-        val shownApps = PlatformCatalog.all.filter { showMoreApps || it.id in coreApps }
         shownApps.forEach { platform ->
             val config = settings.platforms[platform.id]
+            val enabled = config?.enabled == true
             item(key = platform.id) {
                 OMCard(
                     modifier = Modifier
@@ -133,37 +121,24 @@ fun ShieldsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { expanded = if (expanded == platform.id) null else platform.id }
-                                .padding(16.dp),
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Monogram(platform, size = 46.dp)
+                            Monogram(platform, size = 40.dp)
                             Spacer(Modifier.width(13.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    platform.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = TextPrimary,
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = if (config?.enabled == true) {
-                                        val labels = config.surfaces.entries
-                                            .filter { it.value.mode != BlockMode.OFF }
-                                            .mapNotNull { PlatformCatalog.surface(platform.id, it.key)?.label }
-                                        if (labels.isEmpty()) "on - nothing picked yet"
-                                        else "covering ${labels.joinToString(" + ")}"
-                                    } else {
-                                        "off"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (config?.enabled == true) AccentDim else TextTertiary,
-                                )
-                            }
-                            OMSwitch(
-                                checked = config?.enabled == true,
-                                onCheckedChange = { onTogglePlatform(platform.id, it) },
+                            Text(
+                                platform.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f),
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Pill(
+                                text = platformStateLabel(platform, config),
+                                color = if (enabled) AccentDim else TextTertiary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            OMSwitch(checked = enabled, onCheckedChange = { onTogglePlatform(platform.id, it) })
+                            Spacer(Modifier.width(6.dp))
                             Text(
                                 if (expanded == platform.id) "⌃" else "⌄",
                                 color = TextTertiary,
@@ -177,28 +152,18 @@ fun ShieldsScreen(
                                     val mode = config?.surfaces?.get(surface.id)?.mode ?: BlockMode.OFF
                                     Text(
                                         surface.label,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = TextPrimary,
-                                    )
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        surface.blurb,
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = TextSecondary,
                                     )
-                                    Spacer(Modifier.height(10.dp))
+                                    Spacer(Modifier.height(8.dp))
                                     ModeSelector(
                                         selected = mode,
                                         onSelect = { onSurfaceMode(platform.id, surface.id, it) },
                                         modifier = Modifier.fillMaxWidth(),
                                     )
-                                    Spacer(Modifier.height(16.dp))
+                                    Spacer(Modifier.height(14.dp))
                                 }
-                                Text(
-                                    "daily limit",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = TextTertiary,
-                                )
+                                Text("daily limit", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
                                 Spacer(Modifier.height(8.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                                     listOf(0 to "off", 15 to "15m", 30 to "30m", 45 to "45m", 60 to "1h").forEach { (minutes, label) ->
@@ -220,32 +185,19 @@ fun ShieldsScreen(
                                         }
                                     }
                                 }
-                                Spacer(Modifier.height(10.dp))
-                                val limitOn = (config?.dailyLimitMinutes ?: 0) > 0
-                                val needsUsage = limitOn && !permissions.usageAccess
-                                if (needsUsage || !limitOn) {
+                                val needsUsage = (config?.dailyLimitMinutes ?: 0) > 0 && !permissions.usageAccess
+                                if (needsUsage) {
+                                    Spacer(Modifier.height(12.dp))
                                     Text(
-                                        text = if (needsUsage)
-                                            "limit saved. usage access is off, so it can't count yet - tap to fix."
-                                        else
-                                            "a daily budget needs usage access. picking one asks for it.",
+                                        "usage access off - tap to allow",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (needsUsage) Accent else TextTertiary,
-                                        modifier = if (needsUsage)
-                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onGrantUsage)
-                                        else Modifier.fillMaxWidth(),
+                                        color = Accent,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable(onClick = onGrantUsage),
                                     )
-                                    Spacer(Modifier.height(10.dp))
                                 }
-                                Text(
-                                    text = when {
-                                        config?.enabled != true -> "flip the shield on and these stop being suggestions."
-                                        settings.strictMode -> "strict is on. everything above is a dead end."
-                                        else -> "strict closes the feed instantly. gentle gives you a breath first."
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextTertiary,
-                                )
                             }
                         }
                     }
@@ -276,59 +228,71 @@ fun ShieldsScreen(
         }
 
         item { Spacer(Modifier.height(12.dp)) }
-        item { SectionLabel("reminders") }
-        item { Spacer(Modifier.height(10.dp)) }
-        item {
-            OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
-                Column {
-                    Text("while you're in there", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        nudgeChoices.forEach { minutes ->
-                            ChoiceChip(
-                                label = if (minutes == 0) "off" else "${minutes}m",
-                                selected = settings.nudgeMinutes == minutes,
-                                onClick = { onNudgeChange(minutes) },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Divider()
-                    Spacer(Modifier.height(16.dp))
-                    ToggleRow(
-                        title = "long videos too",
-                        subtitle = "whole-app time, measured not estimated",
-                        checked = settings.countLongVideos,
-                        onCheckedChange = onLongVideosChange,
-                    )
-                }
-            }
-        }
-
-        item { Spacer(Modifier.height(6.dp)) }
         item {
             OMCard(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSchedule),
-                padding = PaddingValues(18.dp),
+                padding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("quiet hours", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                        Spacer(Modifier.height(3.dp))
-                        Text(
-                            if (settings.schedule.enabled) "your window is running" else "no window claimed yet",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                        )
-                    }
+                    Text("quiet hours", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                    Spacer(Modifier.width(8.dp))
+                    Pill(
+                        text = if (settings.schedule.enabled) "on" else "off",
+                        color = if (settings.schedule.enabled) AccentDim else TextTertiary,
+                    )
+                    Spacer(Modifier.weight(1f))
                     Text("→", color = Accent, style = MaterialTheme.typography.titleMedium)
                 }
             }
         }
-        item { Spacer(Modifier.height(18.dp)) }
+
+        item { Spacer(Modifier.height(12.dp)) }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { showAdvanced = !showAdvanced }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SectionLabel("advanced", modifier = Modifier.weight(1f))
+                Text(if (showAdvanced) "⌃" else "⌄", color = TextTertiary, style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        if (showAdvanced) {
+            item { Spacer(Modifier.height(6.dp)) }
+            item {
+                OMCard(modifier = Modifier.fillMaxWidth(), padding = PaddingValues(18.dp)) {
+                    Column {
+                        Text("reminders", style = MaterialTheme.typography.labelSmall, color = TextTertiary)
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            nudgeChoices.forEach { minutes ->
+                                ChoiceChip(
+                                    label = if (minutes == 0) "off" else "${minutes}m",
+                                    selected = settings.nudgeMinutes == minutes,
+                                    onClick = { onNudgeChange(minutes) },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        Divider()
+                        Spacer(Modifier.height(18.dp))
+                        ToggleRow(
+                            title = "long videos too",
+                            checked = settings.countLongVideos,
+                            onCheckedChange = onLongVideosChange,
+                        )
+                    }
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(16.dp)) }
         item {
             Text(
-                "feeds get covered. your chats and dms stay untouched.",
+                "chats and dms stay untouched.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
             )
@@ -338,6 +302,14 @@ fun ShieldsScreen(
 }
 
 private val nudgeChoices = listOf(0, 3, 5, 10)
+
+private fun platformStateLabel(platform: Platform, config: PlatformConfig?): String {
+    if (config?.enabled != true) return "off"
+    val active = platform.surfaces.count { surface ->
+        (config.surfaces[surface.id]?.mode ?: BlockMode.OFF) != BlockMode.OFF
+    }
+    return if (active > 0) "$active on" else "on"
+}
 
 @Composable
 private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {

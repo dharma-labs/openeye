@@ -77,6 +77,8 @@ class GuardAccessibilityService : AccessibilityService() {
     private var screenMinutesAt = 0L
     private var screenMinutesPlatform: String? = null
     private var focusLostAt = 0L
+    private val intrusions = ArrayDeque<Long>()
+    private var handsOffUntil = 0L
     private val lastBlockAt = mutableMapOf<String, Long>()
     private val lastLimitCheckAt = mutableMapOf<String, Long>()
     private val lastLimitBlockAt = mutableMapOf<String, Long>()
@@ -87,9 +89,12 @@ class GuardAccessibilityService : AccessibilityService() {
     private val ticker = object : Runnable {
         override fun run() {
             if (!tickerRunning) return
-            if (foregroundPlatform == null || feedStillOwnsTheScreen()) {
+            // One window pass per second, shared by everything below. Asking the window manager
+            // twice on the same tick is the kind of work that shows up as battery drain.
+            val owner = if (foregroundPlatform == null) null else foregroundWindowPackage()
+            if (foregroundPlatform == null || feedStillOwnsTheScreen(owner)) {
                 if (tracker.active) {
-                    verifySurface()
+                    verifySurface(owner)
                     if (tracker.active) tracker.tick()
                 }
                 refreshHud()
@@ -107,7 +112,7 @@ class GuardAccessibilityService : AccessibilityService() {
      * waiting for an event is what lets continuous watching stay one continuous session - and what
      * takes the counter off the screen the moment something else is in front.
      */
-    private fun feedStillOwnsTheScreen(): Boolean {
+    private fun feedStillOwnsTheScreen(owner: String?): Boolean {
         val platform = foregroundPlatform ?: run { focusLostAt = 0L; return true }
         // A feed can be entered without a window-state event reaching us - resuming from our own
         // block screen does exactly that. Deriving the package from the platform keeps the counter
@@ -119,7 +124,6 @@ class GuardAccessibilityService : AccessibilityService() {
             leaveTargetApp()
             return false
         }
-        val owner = foregroundWindowPackage()
         if (owner == null || owner == pkg) {
             focusLostAt = 0L
             return true
@@ -148,20 +152,23 @@ class GuardAccessibilityService : AccessibilityService() {
      * and the session would go on counting minutes the user never spent in a clip feed. The tree is
      * the only witness when the app has gone quiet.
      */
-    private fun verifySurface() {
+    private fun verifySurface(owner: String?) {
         val platformId = foregroundPlatform ?: return
         val pkg = currentPackage ?: return
+        // While the app is talking to us the event path already measures the screen four or five
+        // times a second. Reading the whole tree again on the same tick is work for nothing.
+        val wallNow = System.currentTimeMillis()
+        if (wallNow - lastEvaluation < VERIFY_AFTER_QUIET_MS) return
         val root = activeRootFor(pkg, null) ?: return
-        val now = System.currentTimeMillis()
         val nodes = collectNodes(root)
         val pager = hasClipPager(nodes)
         val surfaceId = detectSurface(platformId, null, nodes, pager)
         if (surfaceId != null) {
             lastSurfaceId = surfaceId
-            lastSurfaceSeen = now
+            lastSurfaceSeen = wallNow
             return
         }
-        if (feedClosed(pkg, nodes, pager, now)) {
+        if (feedClosed(pkg, owner, nodes, pager, wallNow)) {
             if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "leave surface (tick)")
             tracker.leave()
             lastSurfaceId = null
@@ -200,6 +207,10 @@ class GuardAccessibilityService : AccessibilityService() {
                 touches = slice.touches,
                 hour = slice.hour,
             )
+            // The home-screen widget reads the same records; a flush is the moment its minute
+            // actually changes, so it waits for nothing. Nothing else forces an update, and with no
+            // widget placed this returns after one cheap lookup.
+            com.example.openmind.widget.OpeneyeWidget.updateAll(this, force = true)
         }
         usageRepository = UsageStatsRepository(this)
     }
@@ -348,7 +359,9 @@ class GuardAccessibilityService : AccessibilityService() {
             lastSurfaceId = surfaceId
             lastSurfaceSeen = now
             tracker.enter(platformId, surfaceId)
-        } else if (tracker.active && lastSurfaceId != null && feedClosed(pkg, nodes, pager, now)) {
+        } else if (tracker.active && lastSurfaceId != null &&
+            feedClosed(pkg, foregroundWindowPackage(), nodes, pager, now)
+        ) {
             if (BuildConfig.DEBUG) Log.d("OpeneyeSurface", "leave surface")
             tracker.leave()
             lastSurfaceId = null
@@ -379,13 +392,13 @@ class GuardAccessibilityService : AccessibilityService() {
      */
     private fun feedClosed(
         pkg: String,
+        owner: String?,
         nodes: List<AccessibilityNodeInfo>,
         pager: Boolean,
         now: Long,
     ): Boolean {
         val stale = now - lastSurfaceSeen
         if (stale <= SURFACE_GRACE_MS) return false
-        val owner = foregroundWindowPackage()
         if (owner != null && owner != pkg) return true
         if (hasBottomLabel(nodes, "home")) return true
         return !pager && stale > SURFACE_STALE_MS
@@ -400,6 +413,7 @@ class GuardAccessibilityService : AccessibilityService() {
     ): List<HideTarget> {
         val config = settings.platforms[platformId] ?: return emptyList()
         if (!config.enabled) return emptyList()
+        if (System.currentTimeMillis() < handsOffUntil) return emptyList()
 
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
@@ -839,6 +853,7 @@ class GuardAccessibilityService : AccessibilityService() {
         if (minutes >= limit) {
             val lastBlock = lastLimitBlockAt[platformId] ?: 0L
             if (now - lastBlock < 5 * 60_000L) return true
+            if (!allowIntrusion(now)) return true
             lastLimitBlockAt[platformId] = now
             AppRepository.get(this).logEvent(platformId, "app", BlockMode.STRICT.name, "BLOCKED")
             tracker.leave()
@@ -935,6 +950,7 @@ class GuardAccessibilityService : AccessibilityService() {
 
         val key = BypassStore.key(platformId, surfaceId)
         if (now - (lastBlockAt[key] ?: 0L) < BLOCK_DEBOUNCE_MS) return
+        if (!allowIntrusion(now)) return
         lastBlockAt[key] = now
 
         val repo = AppRepository.get(this)
@@ -946,7 +962,6 @@ class GuardAccessibilityService : AccessibilityService() {
         overlays.clear()
         hud.hide()
         nudge.removeNow()
-        performGlobalAction(GLOBAL_ACTION_BACK)
 
         val intent = Intent(this, BlockActivity::class.java).apply {
             addFlags(
@@ -959,7 +974,45 @@ class GuardAccessibilityService : AccessibilityService() {
             putExtra(BlockActivity.EXTRA_MODE, decision.mode.name)
             putExtra(BlockActivity.EXTRA_REASON, decision.reason.name)
         }
-        runCatching { startActivity(intent) }
+        // Our screen first, then the back press that walks the user out of the feed. Pressing Back
+        // when the block screen did not come up - Android blocks background activity starts on
+        // some OEMs - navigates the phone with nothing to show for it, which reads as a hang.
+        if (runCatching { startActivity(intent) }.isFailure) {
+            Log.w("OpeneyeSafety", "block screen could not open for $platformId; left the app alone")
+            return
+        }
+        // The back press has to wait for the handover. Delivered while the feed still owns the
+        // window it exits the feed, which is the point; delivered after our own screen appears it
+        // dismisses that screen and drops the user straight back into what we meant to block.
+        handler.postDelayed({
+            if (foregroundWindowPackage() != packageName) {
+                runCatching { performGlobalAction(GLOBAL_ACTION_BACK) }
+            }
+        }, BLOCK_BACK_DELAY_MS)
+    }
+
+    /**
+     * Whether we may still touch the system on this pass.
+     *
+     * Covering a button, opening our own screen and pressing Back are the only things here that can
+     * make a phone feel broken, and every one of them is driven by a guess about another app's view
+     * tree. A burst of them means the guess is wrong, so the shield stops guessing: the intrusive
+     * part pauses for ten minutes while counting, the readout and the reminders carry on.
+     */
+    private fun allowIntrusion(now: Long): Boolean {
+        if (now < handsOffUntil) return false
+        intrusions.addLast(now)
+        while (intrusions.isNotEmpty() && now - intrusions.first() > INTRUSION_WINDOW_MS) {
+            intrusions.removeFirst()
+        }
+        if (intrusions.size <= MAX_INTRUSIONS_PER_WINDOW) return true
+        handsOffUntil = now + HANDS_OFF_MS
+        intrusions.clear()
+        if (::overlays.isInitialized) overlays.clear()
+        if (::hud.isInitialized) hud.hide()
+        if (::nudge.isInitialized) nudge.removeNow()
+        Log.w("OpeneyeSafety", "too many covers or blocks in ${INTRUSION_WINDOW_MS / 1000}s; hands off for ${HANDS_OFF_MS / 60_000}min")
+        return false
     }
 
     // -------------------------------------------------------------------- hud
@@ -1135,6 +1188,11 @@ class GuardAccessibilityService : AccessibilityService() {
         private const val FOCUS_LOST_MS = 2_000L
         private const val TICK_MS = 1_000L
         private const val BLOCK_DEBOUNCE_MS = 1_500L
+        private const val BLOCK_BACK_DELAY_MS = 700L
+        private const val VERIFY_AFTER_QUIET_MS = 3_000L
+        private const val INTRUSION_WINDOW_MS = 120_000L
+        private const val MAX_INTRUSIONS_PER_WINDOW = 6
+        private const val HANDS_OFF_MS = 600_000L
         private const val MAX_NODES = 400
         private const val LIMIT_CHANNEL = "openeye_limits"
         private const val CLICKABLE_BONUS = 1_000_000L

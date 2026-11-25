@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/openeye_widget_background"
+    android:padding="16dp"
+    android:gravity="center_vertical|start">
+
+    <TextView
+        android:id="@+id/widget_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="10sp"
+        android:letterSpacing="0.08"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/openmind_accent"
+        android:text="openeye" />
+
+    <TextView
+        android:id="@+id/widget_big"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textSize="32sp"
+        android:textColor="@color/widget_text"
+        android:text="--" />
+
+    <TextView
+        android:id="@+id/widget_sub"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:textColor="@color/widget_muted"
+        android:text="today" />
+
+    <TextView
+        android:id="@+id/widget_goal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:textColor="@color/widget_text"
+        android:visibility="gone" />
+</LinearLayout>

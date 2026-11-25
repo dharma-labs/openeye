@@ -3,8 +3,11 @@
 **Your attention, back on your side.**
 
 Openeye is a local-first Android digital wellbeing app. It hides the addictive surfaces inside
-short-video apps, counts time and estimated items seen in Reels/Shorts, and talks to you in a
-way that is meant to change behaviour rather than make you feel bad about it.
+short-video apps, counts time and estimated items seen in Reels/Shorts, puts that number on the home
+screen where it can be seen without opening anything, and talks to you in a way that is meant to
+change behaviour rather than make you feel bad about it. The point is fewer minutes on a feed, not a
+neat report about them - so the blocking, the counting, the reminders and the widget read from one
+set of measured records and aim at the same outcome.
 
 Version 4.0.0 - the public-launch cut: a redrawn mark, four tabs instead of five, the per-app
 details folded behind `add apps`, permissions that ask themselves at the right moment, and every
@@ -12,6 +15,9 @@ screen driven on an emulator before it shipped.
 4.0.1 - 4.0.3 are the counting-correctness cuts: the overlay counts on a feed that emits no events,
 volume keys no longer restart a session, an interruption is resumed instead of reset, and a session
 closes when the clip feed is provably gone. See Verification.
+4.1.0 is the "do not break the phone, and do not hide the number" cut: the intrusive parts are now
+physically bounded and can opt themselves out, Today / Shields / Numbers were cut back to their
+numbers, there is a home-screen widget, and Settings says who built it. See Verification.
 Forked from Openeye 2.3.0 at
 `C:\Users\kumar\.openclaw-autoclaw\workspace\openmind` (that folder is untouched).
 Package id intentionally unchanged: `com.example.openmind`. **Because the id is shared, installing
@@ -67,6 +73,7 @@ build if banned vocabulary ("addict", "detox", "clean", "sober", "discipline", "
 | In-feed reminder popups | Working; every 5 min of feed time by default (off/3/5/10), non-touchable overlay that fades on its own |
 | Whole-app time in the reminder | Optional "long videos too" switch; real UsageStats minutes, never a feed estimate |
 | Coverage | Instagram (+ Lite), YouTube, Facebook (+ Lite), TikTok (both package ids), Snapchat |
+| Home-screen widget | Working. `Openeye today` in the launcher's widget picker: feed minutes as the number, screen time in the line above, estimated clips and visits below, and the stop rule when one is signed. Same records the Today screen reads; tap opens the app. |
 | Hide the Reels / Explore / Shorts / Spotlight button | Working, catalog-driven; TikTok's For You is Home, so it is counted and never covered |
 | Strava-style summary card | Day/Week toggle; PNG rendered on-device and shared via the system sheet (WhatsApp and others) |
 | Today dashboard | Coach hero message, forgone-time translation, lapse card, feeling reveal |
@@ -75,6 +82,7 @@ build if banned vocabulary ("addict", "detox", "clean", "sober", "discipline", "
 | App-level daily budgets | Settings in Shields; 80% warning + block when spent (needs usage access) |
 | Dark / Light / System theme | Working; token-based palette |
 | Local analytics and data clearing | Working |
+| About in Settings | Working: name, version and build number read from `BuildConfig`, who built it, what the accessibility service is for, and the widget's place in the launcher picker |
 
 ### What is measured
 
@@ -96,6 +104,14 @@ Today and Insights both call `AttentionStats`, so their totals agree by construc
 
 The service runs inside someone else's app while they scroll, so the cost is bounded by design:
 
+- One window pass per second. The ticker asks the window manager who owns the screen once and hands
+  the answer to the surface check, the counter tick, the HUD and the reminder. Nothing on that path
+  reads the tree twice for the same tick.
+- The tree is only re-read during an event drought (`VERIFY_AFTER_QUIET_MS`). While the feed is
+  talking to us, its own events already measure the screen several times a second, so a second
+  opinion would be work for nothing.
+- The ticker is stopped whenever no catalogued app is foreground. On an idle phone the process
+  samples at 0% CPU; that is the whole background cost.
 - Node-tree evaluation is throttled to every 300 ms, and every window-state change bypasses the
   throttle so a cover does not lag the screen it belongs to.
 - A tree walk stops at 400 nodes (`MAX_NODES`); the traversal and the catalog match are one pass.
@@ -108,11 +124,35 @@ The service runs inside someone else's app while they scroll, so the cost is bou
   UsageStats query behind "long videos too" is cached per platform for 60 s.
 - Settings come from an in-memory `StateFlow` backed by Preferences DataStore; the event path never
   hits disk, and the only serialized reads are additive JSON fields.
-- Splash is a minimum of 320 ms and is skipped as soon as state is ready; its enter animation is
-  240 ms so the credit resolves before the screen clears. The sweep is driven from the layout phase
+- The widget is redrawn on a flush, on app open, and on the system's own 30-minute cadence - never
+  on a timer of its own - and does nothing at all when no widget is placed.
+- Splash is a minimum of 1.1 s and is skipped as soon as state is ready; its enter animation is
+  420 ms with a fast-out/slow-in curve, so the mark settles instead of snapping. The window is brand
+  time, not load time - the data is already there. The sweep is driven from the layout phase
   (`Modifier.offset { }`), not by recomposing the screen.
 - Release builds run R8 with `isShrinkResources`: 1.5 MB against 13.5 MB debug. Not yet exercised
   on a device, so treat the shrunk artifact as unverified.
+
+### What the app will not do to your phone
+
+An accessibility overlay can make a device feel broken without crashing it: a window that covers
+the status bar, a back press that goes somewhere you did not mean, a burst of covers because the
+view-tree guess is wrong. Four limits exist for that reason, and all four were written after the
+"overlay makes system failure" reports:
+
+- **Bounded covers.** A hiding window must be an on-screen, clickable node inside the app, at most
+  18% of the screen area, 30% of its height and 95% of its width, and there are at most four of
+  them. Anything bigger is clamped, anything else is refused. `FLAG_LAYOUT_NO_LIMITS` is gone, so no
+  cover can reach the status or navigation bar.
+- **Backoff on a hostile window manager.** Three consecutive `addView`/`updateViewLayout` failures
+  stop the hiding engine for 20 s instead of retrying every event.
+- **A circuit breaker on intrusion.** Six covers or block screens inside two minutes means the
+  guess is wrong, so the service puts its hands off the system for ten minutes - counting, the HUD
+  and the reminders carry on, nothing is drawn over another app and no back press is sent.
+- **Navigation only after a landing.** The block screen is started first and the back press that
+  walks you out of the feed is checked 700 ms later, only if the feed still owns the window. A back
+  press into our own block screen would dismiss it and drop you back into what we meant to block,
+  which reads as a hang.
 
 ---
 
@@ -124,6 +164,7 @@ domain/     RuleEngine, BypassStore, AttentionStats,
             Voice (copy pools), Coach (what to say), TimeTranslation (minutes -> real life)
 service/    GuardAccessibilityService, HidingOverlayController,
             WatchSessionTracker, WatchHudController, WatchNudgeController, FocusTimerService
+widget/     OpeneyeWidget - RemoteViews, no Glance, no new dependency
 ui/         AppRoot, AppViewModel, BlockActivity, components, screens
             (screens: Today, Plan, Shields, Focus, Insights, Schedule, Settings, Onboarding)
 brand/      openeye-icon-1024.png - master launcher artwork
@@ -157,6 +198,9 @@ Screen chrome outside those pools is on the same budget: 4.0.0 cut roughly 370 w
 prose out of Today, Plan, Insights, Focus, Schedule, Settings, Onboarding and the block screen down
 to one short line per idea. Nothing mechanical was removed - every control, number, chip and
 disclosure survived, only the sentences around them shrank.
+4.1.0 did the same to the *layout* of Today, Shields and Numbers: one figure that is the answer,
+the settings that matter as chips, and everything else behind `today in detail` or `advanced`. The
+parameter lists of the old and new screens were diffed to prove no control was lost with the prose.
 
 ### Multi-signal view counting (2.3.0)
 
@@ -291,8 +335,8 @@ Artifacts:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (signed with the debug key, installable)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
-- `C:\Users\kumar\Downloads\openeye-4.0.3-debug.apk` - the copy handed over for install testing
-- `C:\Users\kumar\Downloads\openeye-4.0.3-release-unsigned.apk` - for the Galaxy Store upload after signing
+- `C:\Users\kumar\Downloads\openeye-4.1.0-debug.apk` - the copy handed over for install testing
+- `C:\Users\kumar\Downloads\openeye-4.1.0-release-unsigned.apk` - for the Galaxy Store upload after signing
 
 ## Verification
 
@@ -358,6 +402,41 @@ emulator and fixed, then re-checked on the installed binary with screenshots and
   `2 swipes`, `this one` following the page to Reel 3). Time is measured; counts stay labelled
   estimates.
 
+### Safety, cost and the widget (4.1.0)
+
+Written after reports that the overlay caused a system failure on some devices. Re-checked on the
+same API 36 emulator with the installed 4.1.0 binary:
+
+- `:app:assembleDebug`, `:app:assembleRelease`, `:app:testDebugUnitTest`, `:app:lintDebug` -> all
+  BUILD SUCCESSFUL. Manifest: version 4.1.0 (code 14), still no INTERNET and no SYSTEM_ALERT_WINDOW.
+- **Nothing was bricked, and nothing of ours failed.** `dumpsys dropbox` holds no entry for
+  `com.example.openmind` at any point; the last system ANR on the image is 08:44, two hours before
+  this test window. No "System UI isn't responding" dialog appeared during any run below.
+- **The block screen survives its own back press.** Before the fix, the back press that walks you
+  out of the feed could land on our block screen and dismiss it, leaving the user inside the app we
+  meant to block. With the delayed check, the block screen is up and stays up until answered.
+- **Idle cost is zero.** `dumpsys cpuinfo` reports `+0% com.example.openmind` over a five-minute
+  window with no feed open, and `top` samples 0.0% while one is. The service is not polling a
+  timer while the phone is doing nothing.
+- **Counting still works after all of that.** A real session through the block screen: five volume
+  presses in the middle of it left `still here 1:27 · this one 1:25 · today 4m · 12 clips` - the
+  counter never restarted, and `0 swipes` stayed honest because no swipe happened. Pressing home
+  took the readout with it: no HUD on the launcher, and the widget jumped to the flushed number.
+- **The widget is a widget.** It appears in the launcher's picker as `Openeye today` with its
+  description and preview, drags onto the home screen, and renders
+  `openeye · 43m on screen / 4m / ~12 clips · 9 visits` from the same records the Today screen
+  reads - it agreed with the app to the clip. Tapping it opens the app. Under a minute of watching
+  it says `under a minute · ~2 clips` rather than `0m` next to a clip count, which is the one thing
+  an honest number should never look like.
+- Today, Shields and Numbers were re-cut around their numbers: one figure per screen, the rest
+  behind `today in detail` and `advanced`. Every callback the old screens had is still there -
+  checked by diffing the parameter lists - and no screen invents a figure it has not measured.
+
+Not verified in 4.1.0: the cover-area clamp and the ten-minute hands-off breaker have never fired
+on a device, because the burst of wrong guesses they exist to survive could not be reproduced here.
+They are reasoned-about guards, not observed ones. The widget has only run on the Pixel launcher;
+One UI's picker, its resize behaviour and Android 12+'s pin-confirmation dialog are untested.
+
 Not verified: no physical device, so OEM accessibility implementations (Xiaomi/Samsung/Huawei kill
 background overlays and rename the accessibility entry) are still unproven - the Samsung/One UI
 behaviour behind the Galaxy Store submission is the open risk. Facebook, Facebook Lite, TikTok and
@@ -384,6 +463,8 @@ activity and view structure; the catalog class names for the real apps are still
   foreground, not as a system-level app lock.
 - Hourly buckets use the flush hour; sessions crossing an hour boundary are attributed there.
 - Focus sessions do not yet support pause/resume or a stored history.
+- The widget is one fixed size. A launcher that cannot give it 2x2 clips the numbers rather than
+  shrinking them, and a resized widget keeps the same content.
 - Every 4.0.0 mechanic that beats plain monitoring - the quoted stop rule, "over your Nm" in the
   HUD, the plan echo on the block screen - is inert until you sign a contract. Without one the app
   falls back to rotating reminders, which is the weakest thing it can do.
@@ -401,7 +482,8 @@ activity and view structure; the catalog class names for the real apps are still
 
 1. Device-verified selectors for current Instagram/YouTube builds.
 2. Pause/resume focus and focus history.
-3. Weekly report and a home-screen widget.
+3. Weekly report, and a second widget size for a week rather than a day. (The daily widget shipped
+   in 4.1.0.)
 4. Optional encrypted export and biometric lock.
 5. Permanent production application id with a documented migration.
 6. Install the 4.0.0 APK on a real phone and read the new copy out loud - twelve-word lines that

@@ -4,4 +4,6 @@
     <string name="accessibility_service_description">Openeye uses this service to tell when a Reels, Explore, Shorts, For You or Spotlight screen is open inside Instagram, YouTube, Facebook, TikTok or Snapchat, and to cover the button that leads there with a local overlay. It looks only for the handful of buttons it needs to cover. It never reads what you type, never stores page text, and sends nothing off this device — the app has no internet permission. You can turn it off any time in Settings.</string>
     <string name="focus_channel_name">focus sessions</string>
     <string name="focus_channel_description">Shows how much of your focus session is left.</string>
+    <string name="widget_label">Openeye today</string>
+    <string name="widget_description">Feed time and clips watched today, measured on this device.</string>
 </resources>

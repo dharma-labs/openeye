@@ -2,4 +2,7 @@
 <resources>
     <color name="openmind_background">#F6F7F2</color>
     <color name="openmind_accent">#5E7A12</color>
+    <color name="widget_background">#FFFFFF</color>
+    <color name="widget_text">#0A0A0B</color>
+    <color name="widget_muted">#6B6F6A</color>
 </resources>
