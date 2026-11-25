@@ -2,6 +2,9 @@ package com.example.openmind.service
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,6 +32,7 @@ import com.example.openmind.R
 import com.example.openmind.data.AppRepository
 import com.example.openmind.data.BlockMode
 import com.example.openmind.data.PlatformCatalog
+import com.example.openmind.data.ScreenTimeMeter
 import com.example.openmind.data.Settings
 import com.example.openmind.data.Surface
 import com.example.openmind.data.UsageStatsRepository
@@ -85,6 +89,48 @@ class GuardAccessibilityService : AccessibilityService() {
     private val warnedLimits = mutableSetOf<String>()
     private var warnedDay = -1L
     private lateinit var usageRepository: UsageStatsRepository
+    private var ambient: AmbientTimerController? = null
+    private var ambientRunning = false
+    private var ambientUsageOk = false
+    private var ambientUsageCheckedAt = 0L
+    private var ambientCheckedAt = 0L
+    private var ambientPending = false
+
+    private val ambientRetry = object : Runnable {
+        override fun run() {
+            ambientPending = false
+            refreshAmbient(force = true)
+        }
+    }
+
+    /**
+     * The corner timer redraws once a minute because that is how often its only digit changes, and
+     * it is not posted at all while the timer is off screen. Nothing here polls a feed.
+     */
+    private val ambientTick = object : Runnable {
+        override fun run() {
+            if (!ambientRunning) return
+            refreshAmbient(force = true)
+            handler.postDelayed(this, AMBIENT_TICK_MS)
+        }
+    }
+
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> {
+                    ScreenTimeMeter.onScreenOn()
+                    handler.post { refreshAmbient(force = true) }
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    // Count up to here, then stop. A dark screen has nothing to show and nothing to
+                    // measure, so the minute loop goes away with it.
+                    ScreenTimeMeter.onScreenOff()
+                    handler.post { setAmbientDown() }
+                }
+            }
+        }
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -213,6 +259,19 @@ class GuardAccessibilityService : AccessibilityService() {
             com.example.openmind.widget.OpeneyeWidget.updateAll(this, force = true)
         }
         usageRepository = UsageStatsRepository(this)
+        ambient = AmbientTimerController(this, getSystemService(WindowManager::class.java))
+        // The screen state is what the whole-phone number is measured against, so the meter has to
+        // know which side of it we are on from the first second, not from the next unlock.
+        if (getSystemService(PowerManager::class.java)?.isInteractive == true) ScreenTimeMeter.onScreenOn()
+        ContextCompat.registerReceiver(
+            this,
+            screenStateReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -220,11 +279,17 @@ class GuardAccessibilityService : AccessibilityService() {
         if (::overlays.isInitialized) overlays.clear()
         if (::hud.isInitialized) hud.hide()
         if (::nudge.isInitialized) nudge.removeNow()
+        // Rotation moves the status bar inset the corner timer is measured from. Down, then back
+        // up at the new size on the next window event rather than leaving it over the notch.
+        setAmbientDown()
         lastEvaluation = 0L
     }
 
     override fun onDestroy() {
         leaveTargetApp()
+        setAmbientDown()
+        runCatching { unregisterReceiver(screenStateReceiver) }
+        ambient = null
         if (::overlays.isInitialized) overlays.clear()
         if (instance === this) instance = null
         super.onDestroy()
@@ -244,6 +309,10 @@ class GuardAccessibilityService : AccessibilityService() {
         if (event == null || !::overlays.isInitialized) return
         val pkg = event.packageName?.toString() ?: return
         val type = event.eventType
+
+        // Every app that takes the screen, ours included, is a reason to put the corner timer up or
+        // take it down. One call, decided from the window that actually owns the screen.
+        if (type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) refreshAmbient()
 
         // Our own overlay windows emit events. Ignore them, except when the block screen opens.
         if (pkg == packageName) {
@@ -1011,8 +1080,95 @@ class GuardAccessibilityService : AccessibilityService() {
         if (::overlays.isInitialized) overlays.clear()
         if (::hud.isInitialized) hud.hide()
         if (::nudge.isInitialized) nudge.removeNow()
+        setAmbientDown()
         Log.w("OpeneyeSafety", "too many covers or blocks in ${INTRUSION_WINDOW_MS / 1000}s; hands off for ${HANDS_OFF_MS / 60_000}min")
         return false
+    }
+
+    // ---------------------------------------------------------------- ambient
+
+    /**
+     * The whole-phone timer goes where there is nothing of ours already saying the same thing: not
+     * inside a feed, where the corner counter and the clips are already up, not inside our own
+     * screens, and not while the system is being protected from us.
+     *
+     * Decided from the window that owns the screen right now, never from a remembered package, so a
+     * missed event cannot leave it stuck over the launcher or stuck over Instagram.
+     */
+    private fun refreshAmbient(force: Boolean = false) {
+        val controller = ambient ?: return
+        val now = SystemClock.elapsedRealtime()
+        // Window events arrive in bursts during a transition and each one costs a window lookup.
+        // Two seconds is shorter than any transition that matters - but the last event of a burst
+        // is the one that tells the truth, so a swallowed check always gets a follow-up.
+        if (!force && now - ambientCheckedAt < AMBIENT_MIN_GAP_MS) {
+            scheduleAmbientCheck(AMBIENT_MIN_GAP_MS)
+            return
+        }
+        ambientCheckedAt = now
+        val settings = AppRepository.get(this).settings.value
+        val pkg = foregroundWindowPackage()
+        val power = getSystemService(PowerManager::class.java)
+        val lit = power == null || power.isInteractive
+        val usageOk = ambientUsageAllowed()
+        val handsOff = System.currentTimeMillis() < handsOffUntil
+        if (BuildConfig.DEBUG) {
+            Log.d("OpeneyeAmbient", "pkg=$pkg timer=${settings.ambientTimer} lit=$lit usage=$usageOk hands=$handsOff")
+        }
+        val wanted = settings.ambientTimer &&
+            pkg != null &&
+            pkg != packageName &&
+            pkg !in PlatformCatalog.packages &&
+            lit &&
+            !handsOff &&
+            usageOk
+        if (!wanted) {
+            if (controller.isShowing) setAmbientDown()
+            return
+        }
+        val minutes = ScreenTimeMeter.minutes(this)
+        if (minutes < 0) {
+            // The first read of the day is still on its way from an IO worker. Ask again shortly
+            // instead of leaving the corner blank until the next app change.
+            if (controller.isShowing) setAmbientDown()
+            scheduleAmbientCheck(AMBIENT_RETRY_MS)
+            return
+        }
+        controller.show("today ${UsageStatsRepository.formatMinutes(minutes)}")
+        if (!ambientRunning) {
+            ambientRunning = true
+            handler.postDelayed(ambientTick, AMBIENT_TICK_MS)
+        }
+    }
+
+    /** Take the corner timer down and stop its loop with it. */
+    private fun setAmbientDown() {
+        ambientRunning = false
+        handler.removeCallbacks(ambientTick)
+        handler.removeCallbacks(ambientRetry)
+        ambientPending = false
+        ambient?.hide()
+    }
+
+    private fun scheduleAmbientCheck(delayMs: Long) {
+        if (ambientPending) return
+        ambientPending = true
+        handler.postDelayed(ambientRetry, delayMs)
+    }
+
+    /** An AppOps check is a binder call; the switch it gates is only read once every 30 s. */
+    private fun ambientUsageAllowed(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - ambientUsageCheckedAt > AMBIENT_USAGE_CHECK_MS) {
+            ambientUsageCheckedAt = now
+            ambientUsageOk = usageRepository.hasPermission()
+        }
+        return ambientUsageOk
+    }
+
+    /** So flipping the switch shows or hides the timer without waiting for the next window change. */
+    fun ambientSettingChanged() {
+        handler.post { refreshAmbient(force = true) }
     }
 
     // -------------------------------------------------------------------- hud
@@ -1175,6 +1331,7 @@ class GuardAccessibilityService : AccessibilityService() {
         currentActivityClass = null
         lastSurfaceId = null
         lastSurfaceSeen = 0L
+        refreshAmbient()
     }
 
     private fun dp(value: Float): Int = (value * resources.displayMetrics.density).toInt()
@@ -1197,6 +1354,10 @@ class GuardAccessibilityService : AccessibilityService() {
         private const val LIMIT_CHANNEL = "openeye_limits"
         private const val CLICKABLE_BONUS = 1_000_000L
         private const val FIRST_NUDGE_MINUTES = 2
+        private const val AMBIENT_TICK_MS = 60_000L
+        private const val AMBIENT_MIN_GAP_MS = 2_000L
+        private const val AMBIENT_RETRY_MS = 3_000L
+        private const val AMBIENT_USAGE_CHECK_MS = 30_000L
 
         @Volatile
         var instance: GuardAccessibilityService? = null

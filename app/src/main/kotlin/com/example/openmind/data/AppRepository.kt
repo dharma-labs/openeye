@@ -173,6 +173,10 @@ class AppRepository private constructor(context: Context) {
         it.copy(countLongVideos = enabled)
     }
 
+    fun setAmbientTimer(enabled: Boolean) = updateSettings {
+        it.copy(ambientTimer = enabled)
+    }
+
     fun setDailyLimit(platformId: String, minutes: Int) = updateSettings { settings ->
         val platform = settings.platforms[platformId] ?: return@updateSettings settings
         settings.copy(

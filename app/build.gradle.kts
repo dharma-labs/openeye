@@ -11,8 +11,8 @@ android {
     applicationId = "com.example.openmind"
     minSdk = 26
     targetSdk = 37
-    versionCode = 14
-    versionName = "4.1.0"
+    versionCode = 15
+    versionName = "4.2.0"
   }
 
   buildTypes {

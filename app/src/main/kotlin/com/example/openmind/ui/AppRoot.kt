@@ -170,6 +170,7 @@ fun AppRoot(viewModel: AppViewModel) {
                         onStrict = viewModel::setStrict,
                         onThemeMode = viewModel::setThemeMode,
                         onTracking = viewModel::setTrackingEnabled,
+                        onAmbientTimer = viewModel::setAmbientTimer,
                         onOpenAccessibility = { AppViewModel.openAccessibilitySettings(context) },
                         onOpenUsage = { AppViewModel.openUsageSettings(context) },
                         onOpenNotifications = { AppViewModel.openNotificationSettings(context) },

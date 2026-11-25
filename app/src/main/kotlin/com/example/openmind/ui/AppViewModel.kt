@@ -73,6 +73,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun setTrackingEnabled(enabled: Boolean) = repo.setTrackingEnabled(enabled)
     fun setNudgeMinutes(minutes: Int) = repo.setNudgeMinutes(minutes)
     fun setCountLongVideos(enabled: Boolean) = repo.setCountLongVideos(enabled)
+    fun setAmbientTimer(enabled: Boolean) {
+        repo.setAmbientTimer(enabled)
+        com.example.openmind.service.GuardAccessibilityService.instance?.ambientSettingChanged()
+    }
     fun setDailyLimit(platformId: String, minutes: Int) = repo.setDailyLimit(platformId, minutes)
     fun setPlatformEnabled(platformId: String, enabled: Boolean) = repo.setPlatformEnabled(platformId, enabled)
     fun setSurfaceMode(platformId: String, surfaceId: String, mode: BlockMode) =

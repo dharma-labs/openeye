@@ -18,6 +18,11 @@ closes when the clip feed is provably gone. See Verification.
 4.1.0 is the "do not break the phone, and do not hide the number" cut: the intrusive parts are now
 physically bounded and can opt themselves out, Today / Shields / Numbers were cut back to their
 numbers, there is a home-screen widget, and Settings says who built it. See Verification.
+4.2.0 is the "the number is the number" cut: whole-device screen time is rebuilt out of usage
+*events* on one merged timeline instead of summed per-package foreground (a real phone was reporting
+21h for a 2h day), and that single figure is now also written to the corner of the screen, where it
+can be seen without opening anything - and where it stands down inside a feed, because a feed already
+has our number on it. See Verification.
 Forked from Openeye 2.3.0 at
 `C:\Users\kumar\.openclaw-autoclaw\workspace\openmind` (that folder is untouched).
 Package id intentionally unchanged: `com.example.openmind`. **Because the id is shared, installing
@@ -70,8 +75,9 @@ build if banned vocabulary ("addict", "detox", "clean", "sober", "discipline", "
 | Study / Work / Sleep routines | Presets that fill the schedule |
 | Focus sessions (15/25/45/90 + custom 5-180 min) | Working |
 | Live Reels/Shorts counter HUD | Working; lowercase, wording escalates as the session grows, shows "over your Nm" past your number |
+| Corner screen-time timer | Working. `today 42m` in the top-left of whatever app is open, refreshed once a minute. Off inside a catalogued feed (the HUD is already there), off over Openeye's own windows, off while an intrusion is hands-off, off with no usage access, off when the switch in Settings is off. Non-touchable, non-focusable, no status-bar layout claim. |
 | In-feed reminder popups | Working; every 5 min of feed time by default (off/3/5/10), non-touchable overlay that fades on its own |
-| Whole-app time in the reminder | Optional "long videos too" switch; real UsageStats minutes, never a feed estimate |
+| Whole-app time in the reminder | Optional "long videos too" switch; the same `ScreenTimeMeter` figure the corner timer and the widget show, never a feed estimate |
 | Coverage | Instagram (+ Lite), YouTube, Facebook (+ Lite), TikTok (both package ids), Snapchat |
 | Home-screen widget | Working. `Openeye today` in the launcher's widget picker: feed minutes as the number, screen time in the line above, estimated clips and visits below, and the stop rule when one is signed. Same records the Today screen reads; tap opens the app. |
 | Hide the Reels / Explore / Shorts / Spotlight button | Working, catalog-driven; TikTok's For You is Home, so it is counted and never covered |
@@ -95,8 +101,14 @@ build if banned vocabulary ("addict", "detox", "clean", "sober", "discipline", "
   are unavailable to a non-root accessibility service, so taps are a lower bound.
 - **Average per item** - feed time divided by estimated exposures, labelled avg/item.
 - **Current item** - live seconds since the last detected paging transition.
-- **Screen time** - UsageStats foreground minutes for the five catalogued apps (main package id
-  only, so Instagram Lite / Facebook Lite time is not summed in), read on demand and cached 60s.
+- **Screen time (whole phone)** - `SCREEN_INTERACTIVE` / `SCREEN_NON_INTERACTIVE` intersected with the
+  union of every foreground interval on the day, from one `queryEvents` pass. Bounded by elapsed time,
+  so it cannot exceed the day. `ScreenTimeMeter` holds it and is the only source the corner timer,
+  the widget and the numbers screen read.
+- **Screen time (per app)** - the same event pass, merged per package so split-screen overlap counts
+  once, keyed by the package on the `ACTIVITY_RESUMED` event (main package id only, so Instagram Lite
+  / Facebook Lite time is not summed in). The daily-limit blocker uses this, not the summed
+  `totalTimeInForeground`.
 
 Today and Insights both call `AttentionStats`, so their totals agree by construction.
 
@@ -121,7 +133,17 @@ The service runs inside someone else's app while they scroll, so the cost is bou
 - `WatchHudController` keeps `lastText` and returns early when the line is unchanged, which is the
   common case between the per-second ticks.
 - Nudges reuse the HUD's already-computed minutes and count - no extra counters - and the whole-app
-  UsageStats query behind "long videos too" is cached per platform for 60 s.
+  figure behind "long videos too" is read from `ScreenTimeMeter`, which is in-memory between reseeds.
+- The corner timer adds one decision per window-state change, throttled to `AMBIENT_MIN_GAP_MS` (2 s)
+  and always followed up if a check is swallowed, plus one text update per minute (`AMBIENT_TICK_MS`).
+  A swallowed check is not lost: the last event of a burst is the one that tells the truth, so the
+  retry is scheduled rather than the change being dropped.
+- `ScreenTimeMeter` never blocks the caller. The day's `queryEvents` runs on `Dispatchers.IO`; until
+  it lands the meter reports `UNKNOWN` and the timer stays down rather than showing a guess. Between
+  reseeds the live part is one subtraction from `elapsedRealtime`, and screen on/off is folded in from
+  the broadcast so a reseed every 5 minutes cannot double-count the current session.
+- One `queryEvents` pass per day produces the whole-device figure *and* every per-app figure. Reading
+  `totalTimeInForeground` per package instead would have been one call per app and wrong on top of it.
 - Settings come from an in-memory `StateFlow` backed by Preferences DataStore; the event path never
   hits disk, and the only serialized reads are additive JSON fields.
 - The widget is redrawn on a flush, on app open, and on the system's own 30-minute cadence - never
@@ -139,7 +161,7 @@ The service runs inside someone else's app while they scroll, so the cost is bou
 
 An accessibility overlay can make a device feel broken without crashing it: a window that covers
 the status bar, a back press that goes somewhere you did not mean, a burst of covers because the
-view-tree guess is wrong. Four limits exist for that reason, and all four were written after the
+view-tree guess is wrong. Five limits exist for that reason, and the first four were written after the
 "overlay makes system failure" reports:
 
 - **Bounded covers.** A hiding window must be an on-screen, clickable node inside the app, at most
@@ -155,17 +177,23 @@ view-tree guess is wrong. Four limits exist for that reason, and all four were w
   walks you out of the feed is checked 700 ms later, only if the feed still owns the window. A back
   press into our own block screen would dismiss it and drop you back into what we meant to block,
   which reads as a hang.
+- **The corner timer is the least capable window in the app.** `AmbientTimerController` adds one
+  `WRAP_CONTENT` text view with `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_LAYOUT_IN_SCREEN` and
+  deliberately no `FLAG_LAYOUT_NO_LIMITS`: it cannot take a tap, cannot take a key, cannot steal
+  focus from the app under it, and cannot extend under the status bar. It is a label, not an overlay
+  with opinions.
 
 ---
 
 ## Architecture
 
 ```
-data/       Models, AppRepository (DataStore), UsageStatsRepository
+data/       Models, AppRepository (DataStore), UsageStatsRepository, ScreenTimeMeter
 domain/     RuleEngine, BypassStore, AttentionStats,
             Voice (copy pools), Coach (what to say), TimeTranslation (minutes -> real life)
 service/    GuardAccessibilityService, HidingOverlayController,
-            WatchSessionTracker, WatchHudController, WatchNudgeController, FocusTimerService
+            WatchSessionTracker, WatchHudController, WatchNudgeController,
+            AmbientTimerController, FocusTimerService
 widget/     OpeneyeWidget - RemoteViews, no Glance, no new dependency
 ui/         AppRoot, AppViewModel, BlockActivity, components, screens
             (screens: Today, Plan, Shields, Focus, Insights, Schedule, Settings, Onboarding)
@@ -337,14 +365,15 @@ Artifacts:
 
 - `app/build/outputs/apk/debug/app-debug.apk` (signed with the debug key, installable)
 - `app/build/outputs/apk/release/app-release-unsigned.apk` (R8 minified; sign before distribution)
-- `C:\Users\kumar\Downloads\openeye-4.1.0-debug.apk` - the copy handed over for install testing
-- `C:\Users\kumar\Downloads\openeye-4.1.0-release-unsigned.apk` - for the Galaxy Store upload after signing
-- `C:\Users\kumar\Downloads\openeye-4.1.0-release.apk` - zipaligned + signed (v2, v3), the public download
+- `C:\Users\kumar\Downloads\openeye-4.2.0-debug.apk` - the copy handed over for install testing
+- `C:\Users\kumar\Downloads\openeye-4.2.0-release-unsigned.apk` - for the Galaxy Store upload after signing
+- `C:\Users\kumar\Downloads\openeye-4.2.0-release.apk` - zipaligned + signed (v2, v3), the public download
 - `C:\Users\kumar\.openclaw-autoclaw\workspace\openeye-signing\` - `openeye-release.jks` and
   `keystore-password.txt`, outside the repo. This key is the only way to ship an update over an
   installed release build; if it is lost, every user has to uninstall and lose their data.
 - Public release: `https://github.com/dharma-labs/openeye-releases` (this repo holds only the signed
-  apk and the install page; the source stays private here)
+  apk and the install page; the source stays private here). Direct link that always follows the
+  newest release: `https://github.com/dharma-labs/openeye-releases/releases/latest/download/openeye-4.2.0.apk`
 
 ## Verification
 
@@ -469,6 +498,57 @@ YouTube and Facebook could not be opened on this emulator image (YouTube refuses
 updated), so all feed testing above ran against a local harness app that mimics their window,
 activity and view structure; the catalog class names for the real apps are still unconfirmed here.
 
+### The number, and the corner timer (4.2.0)
+
+A real phone reported `21h 34m on screen` for a day that contained `1h 58m` of Instagram and nothing
+else. Two bugs, both in the whole-device figure:
+
+- it summed `totalTimeInForeground` across every package. Foreground windows overlap (a video call in
+  a window, a pip player, a dialog from another app), and some packages report foreground while they
+  are not on screen, so the sum is bigger than the day.
+- it came from `queryUsageStats(INTERVAL_DAILY)` buckets, which are not guaranteed to start at local
+  midnight, so part of yesterday could be counted as today.
+
+`readTimeline` replaces both. One `queryEvents` pass per day builds the screen-on spans and the
+foreground spans, `mergeSpans` unions the foreground into a single timeline so an overlap is counted
+once, `overlapMillis` intersects it with the screen being lit, and the result is clamped to
+`end - start` - the figure cannot exceed the time that has actually gone by. Per-app time comes out of
+the same pass. `ScreenTimeMathTest` covers the arithmetic: overlapping apps counted once, a total that
+cannot exceed the time available, touching spans joined, out-of-order input merged, dark-screen time
+excluded, an edge-touch adding nothing, empty input safe. 67 unit tests pass.
+
+One number, three surfaces. `ScreenTimeMeter` is the only holder of the whole-device figure and the
+corner timer, the widget and the numbers screen all read it, so they cannot disagree about the same
+phone on the same day. Verified on the API 36 emulator with the debug binary:
+
+- corner timer `today 52m`, widget headline `openeye · 52m on screen`, Numbers `whole app, today 52m`
+  - the same three surfaces that used to show 21h.
+- Numbers showed `feed time 2m` and `Instagram 1m`, and `dumpsys usagestats` for the same day shows
+  FakeGram's resume/pause pairs adding up to seconds, not hours. The per-app figure moved with the
+  corrected math instead of merely looking smaller.
+- the timer is up over the launcher, over Chrome, and over the launcher's own widget sheet; it is
+  down inside FakeGram Reels, where the HUD already carries the number, and down over Openeye's own
+  windows including the block screen. The decision log (`OpeneyeAmbient`, debug builds only) prints
+  the foreground package and every gate, and the gating matched what was on screen each time.
+- `ScreenTimeMeter` first ran on the accessibility main thread and the service logged
+  `Choreographer: Skipped 37 frames`. It was rewritten so nothing on the event path blocks: the query
+  is on `Dispatchers.IO`, the meter returns `UNKNOWN` until the first read lands, and the timer stays
+  down and retries instead of showing a stale or invented figure.
+- cost after all of it: `dumpsys cpuinfo` over a five-minute idle stretch put the app below the 0.3%
+  reporting floor with load average 0.44, and `dumpsys dropbox` has no entry for the package.
+
+The signed 4.2.0 R8 binary was installed over an uninstall (different signature from debug) and run
+through the new-user path: splash and onboarding, permissions granted from the system, the corner
+timer showing `today 56m` on the launcher, and Numbers reading `56m` for the whole app with `2m` of
+feed time. The shrunk artifact keeps the timer, the meter and the corrected figure.
+
+Not verified in 4.2.0: the corner timer on a phone with a punch-hole or a tall status bar, where the
+`statusBarHeight + 4dp` offset is a guess about someone else's inset; on One UI, MIUI and other OEMs
+that treat accessibility overlays from a running service as a battery cost; and on a device where
+`SCREEN_INTERACTIVE` events are missing from the usage stream, which takes the documented fallback
+path rather than a tested one. The 21h bug itself was reproduced only as arithmetic - the emulator
+could not be made to disagree with the events the way a real phone did.
+
 ## Known limitations
 
 - Detected taps under-count literal finger touches; the service sees accessibility click events only.
@@ -488,6 +568,12 @@ activity and view structure; the catalog class names for the real apps are still
 - Focus sessions do not yet support pause/resume or a stored history.
 - The widget is one fixed size. A launcher that cannot give it 2x2 clips the numbers rather than
   shrinking them, and a resized widget keeps the same content.
+- The corner timer is placed at `statusBarHeight + 4dp`. On a punch-hole or a tall notch that inset is
+  the OEM's, not ours, so the text can sit close to the cutout; it never draws over it because the
+  window has no `FLAG_LAYOUT_NO_LIMITS`.
+- The corner timer is screen-lit-and-an-app-up time, not attention time. A call on speaker, a recipe
+  left open and a notification you only half read all count, because android's events cannot tell them
+  apart from reading. The label says "today", which is what it is.
 - Every 4.0.0 mechanic that beats plain monitoring - the quoted stop rule, "over your Nm" in the
   HUD, the plan echo on the block screen - is inert until you sign a contract. Without one the app
   falls back to rotating reminders, which is the weakest thing it can do.

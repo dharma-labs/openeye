@@ -59,6 +59,7 @@ fun SettingsScreen(
     onStrict: (Boolean) -> Unit,
     onThemeMode: (String) -> Unit,
     onTracking: (Boolean) -> Unit,
+    onAmbientTimer: (Boolean) -> Unit,
     onOpenShields: () -> Unit,
     onBack: () -> Unit,
     onOpenAccessibility: () -> Unit,
@@ -104,6 +105,15 @@ fun SettingsScreen(
                         subtitle = "counts reels and shorts, on this phone.",
                         checked = settings.trackingEnabled,
                         onCheckedChange = onTracking,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Divider()
+                    Spacer(Modifier.height(16.dp))
+                    ToggleRow(
+                        title = "corner timer",
+                        subtitle = "today's screen time, top left. off inside feeds.",
+                        checked = settings.ambientTimer,
+                        onCheckedChange = onAmbientTimer,
                     )
                 }
             }

@@ -94,6 +94,8 @@ data class Settings(
     val nudgeMinutes: Int = 5,
     /** Add whole-app screen time to the counter. Measured, never estimated. */
     val countLongVideos: Boolean = false,
+    /** The corner timer that says how long the phone has been on today. Off inside feeds. */
+    val ambientTimer: Boolean = true,
 )
 
 @Serializable

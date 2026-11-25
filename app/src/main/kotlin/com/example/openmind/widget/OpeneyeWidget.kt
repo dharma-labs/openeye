@@ -12,6 +12,7 @@ import android.widget.RemoteViews
 import com.example.openmind.MainActivity
 import com.example.openmind.R
 import com.example.openmind.data.AppRepository
+import com.example.openmind.data.ScreenTimeMeter
 import com.example.openmind.data.UsageStatsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,12 @@ object OpeneyeWidget {
         val minutes = (millis / 60_000L).toInt()
 
         val screenMinutes = if (UsageStatsRepository(context).hasPermission()) {
-            UsageStatsRepository.totalMinutesToday(context)
+            // The same meter the corner timer reads, so the widget and the timer cannot show two
+            // different numbers for the same phone on the same day. A widget added straight after a
+            // boot finds the meter cold, so it reads the events itself rather than paint a blank.
+            val metered = ScreenTimeMeter.minutes(context)
+            if (metered >= 0) metered
+            else (UsageStatsRepository.screenOnMillisToday(context) / 60_000L).toInt()
         } else {
             0
         }
