@@ -14,6 +14,11 @@ repository carries its own packaging notes; the copy that gets reviewed lives in
 5. Wait for the CI build. If it fails, the log says which step; paste it into the MR and the
    maintainers will pick it up. Do not force-push over a failing build - add a commit.
 
+If the MR shows a red pipeline with **no jobs at all**, that is not the recipe. A GitLab account that
+was just created cannot run shared-runner CI ("Identity verification is required in order to run CI
+jobs"), so fdroiddata's pipeline is created and dies instantly. The MR still reaches the maintainers,
+who run the build themselves.
+
 If `fdroid server` tooling is installed locally, this checks the recipe before the MR:
 
 ```bash
