@@ -1,0 +1,2 @@
+# fdroiddata requires LF in the recipe file; core.autocrlf=true would otherwise rewrite it on checkout
+packaging/fdroid/*.yml text eol=lf

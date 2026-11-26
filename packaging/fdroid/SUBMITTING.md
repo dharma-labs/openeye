@@ -3,16 +3,35 @@
 The recipe in this folder is the file that goes into `fdroiddata`. It is kept here so the app
 repository carries its own packaging notes; the copy that gets reviewed lives in the merge request.
 
+## Outcome of the first submission
+
+MR [fdroiddata!59168](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/59168) was closed by
+Licaon_Kter on 2026-11-26: *"template not used ... app is not ready, see Policy Quality point 6, go
+and correct the things and again request."* Both parts were right:
+
+- the body was my own prose instead of `Default.md` from `fdroiddata`, so none of the checklist could
+  be reviewed. The required title is also `New app: Openeye`, not `Add Openeye ...`.
+- the recipe itself had two defects that checklist calls out: `commit: v5.1.0` (must be a full hash)
+  and no `AuthorName`. `Categories: Internet` was also wrong - the schema has a
+  `Digital Wellbeing` category. All three are fixed here.
+- **Quality point 6 is a real block, not paperwork**: *"the application should have been actively
+  developed for at least 3 months"*, unless it has proven users, the author already maintains apps
+  on F-Droid, or it is event-only. None of those is true today (public history started 2026-11-24).
+  Re-request on or after **2027-02-24**, with the then-current release.
+
 ## Steps
 
 1. Sign in at [gitlab.com](https://gitlab.com) and fork
-   [fdroid/fdroiddata](https://gitlab.com/fdroid/fdroiddata).
-2. In your fork, add one file: `metadata/io.github.dharma_labs.openeye.yml`, with the exact contents
-   of [io.github.dharma_labs.openeye.yml](io.github.dharma_labs.openeye.yml).
+   [fdroid/fdroiddata](https://gitlab.com/fdroid/fdroiddata). Make sure the **fork is public** and the
+   branch is **not protected** (Settings → Repository → Protected branches).
+2. In your fork, add exactly one file: `metadata/io.github.dharma_labs.openeye.yml`, with the contents
+   of [io.github.dharma_labs.openeye.yml](io.github.dharma_labs.openeye.yml), **LF** line endings.
+   Nothing else in the MR - descriptions, icons and screenshots belong upstream in `fastlane/`.
 3. Commit it on its own branch, e.g. `add-openeye`.
-4. Open a merge request against `master` of `fdroid/fdroiddata` using the text below.
-5. Wait for the CI build. If it fails, the log says which step; paste it into the MR and the
-   maintainers will pick it up. Do not force-push over a failing build - add a commit.
+4. Open a merge request against `master` of `fdroid/fdroiddata` titled `New app: Openeye`, using
+   [MR-DESCRIPTION.md](MR-DESCRIPTION.md) verbatim and dragging in the six phone screenshots.
+5. Wait for CI. If it fails, the log says which step; paste it into the MR. Do not force-push over a
+   failing build - add a commit.
 
 If the MR shows a red pipeline with **no jobs at all**, that is not the recipe. A GitLab account that
 was just created cannot run shared-runner CI ("Identity verification is required in order to run CI
@@ -28,28 +47,9 @@ fdroid build io.github.dharma_labs.openeye     # runs the build in docker
 
 ## Merge request text
 
-> **Add Openeye (io.github.dharma_labs.openeye)**
->
-> Source: https://github.com/dharma-labs/openeye (GPL-3.0-only, licence file at the repo root)
-> Upstream release tag: `v5.1.0`, versionCode 17
->
-> A local-first digital wellbeing app for short-video feeds. It counts feed time and estimated clips
-> from usage events and the accessibility node tree, covers the Reels/Shorts/Explore buttons, and
-> shows the number on the home screen and in the corner of the display.
->
-> - No `INTERNET` permission in the manifest, so no anti-feature is needed. No backend, no analytics
->   SDK, no Firebase, no push.
-> - All dependencies are AndroidX / JetBrains artifacts under Apache-2.0 from Google Maven and Maven
->   Central. Nothing non-free.
-> - `fastlane` metadata, including `icon.png` and six device screenshots, is in the upstream repo at
->   `fastlane/metadata/android/en-US/`, so `AntiFeatureText` and friends are not needed.
-> - The build is the R8 release variant, which is the variant that has been run on a device end to
->   end. The output is `app/build/outputs/apk/release/app-release-unsigned.apk`.
-> - The APK attached to the `v5.1.0` tag is that clean `assembleRelease` output, zipaligned and
->   signed, so comparing against it should pass. Reproducible builds are not switched on in this
->   recipe yet - `AllowedAPKSigningKeys` can go in on the next release.
->
-> I am the author and the maintainer of the upstream repository.
+It lives in [MR-DESCRIPTION.md](MR-DESCRIPTION.md) because it has to match the `Default.md` template
+in `fdroiddata`, checkboxes and all. Do not compress it back into a paragraph - that is what got the
+first MR closed.
 
 ## Checked before submitting
 

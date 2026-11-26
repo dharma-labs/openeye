@@ -1,5 +1,6 @@
-Categories: Internet
+Categories: Digital Wellbeing
 License: GPL-3.0-only
+AuthorName: Dharmendra
 WebURL: https://github.com/dharma-labs/openeye
 SourceCode: https://github.com/dharma-labs/openeye
 IssueTracker: https://github.com/dharma-labs/openeye/issues
@@ -15,7 +16,7 @@ Repo: https://github.com/dharma-labs/openeye.git
 Builds:
   - versionName: 5.1.0
     versionCode: 17
-    commit: v5.1.0
+    commit: fb588b11ddc637f425ec6e51bb3150d1db446c84
     submodules: false
     gradle:
       - :app:assembleRelease
