@@ -8,11 +8,19 @@ change behaviour rather than make you feel bad about it.
 
 No account. No server. No `INTERNET` permission. Everything stays on your phone.
 
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" height="72" alt="Get it on F-Droid">](https://f-droid.org/packages/io.github.dharma_labs.openeye/)
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" height="72" alt="Get it on F-Droid">](https://dharma-labs.github.io/openeye-releases/repo)
 
-The signed APK is also attached to each
-[GitHub release](https://github.com/dharma-labs/openeye/releases). F-Droid re-signs every build, so
-do not switch between the two sources without uninstalling first.
+Two ways to install, both signed with the same release key:
+
+- **F-Droid repository** — add `https://dharma-labs.github.io/openeye-releases/repo` to the
+  [F-Droid app](https://f-droid.org/en/packages/org.fdroid.fdroid/) and updates arrive in its
+  updates tab. Steps in the
+  [releases README](https://github.com/dharma-labs/openeye-releases#stay-updated-without-downloading-anything).
+- **Signed APK** — attached to each [GitHub release](https://github.com/dharma-labs/openeye/releases).
+
+Both serve identical bytes, so switching between them needs no reinstall. A future listing in the
+main F-Droid store would be re-signed by F-Droid, so that channel cannot update these installs —
+uninstall first if you switch.
 
 ## What it does
 
@@ -99,5 +107,11 @@ GPL-3.0-only. See [LICENSE](LICENSE).
 
 The F-Droid build recipe and the submission steps live in
 [packaging/fdroid](packaging/fdroid/SUBMITTING.md).
+
+The self-hosted repository that serves these APKs to F-Droid clients is regenerated with
+`fdroid update` in `../openeye-fdroid` and pushed to `repo/` in
+[dharma-labs/openeye-releases](https://github.com/dharma-labs/openeye-releases). That folder holds
+the repository signing key and its passwords — keep it out of any public remote, and keep the key
+itself: a repo whose index is re-signed with a different key makes the client refuse the update.
 
 Built by Dharmendra.

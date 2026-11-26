@@ -71,6 +71,28 @@ One caveat for anyone rebuilding: AGP writes `META-INF/version-control-info.text
 with the commit it saw. Building from a dirty working tree changes that file, so compare against a
 clean checkout of the tag, not against a build of your own branch.
 
+## The author's own repository is live meanwhile
+
+`https://dharma-labs.github.io/openeye-releases/repo` is a signed fdroidserver index serving the
+same APK bytes as the GitHub release (verified: sha256
+`f21c07134601bc33197fdd689b77b16b6993c96fcf74e72c197bcd9d737b1f78`, cert
+`e6e867f2…d8c5`). It was added, refreshed and installed from with F-Droid 2.0.3 on an emulator.
+
+It is not a substitute for the archive - it needs no review and delivers nothing in terms of
+discoverability - but it is the channel people can use today, and it is the evidence to point at if
+a maintainer asks whether anyone outside the store installs this app.
+
+Regenerate it after every release, from the same clean checkout the release APK came from:
+
+```bash
+cp <release.apk> repo/io.github.dharma_labs.openeye.<versionCode>.apk
+fdroid update          # signs the index with the repository key
+```
+
+Then push `repo/` to `main` in `dharma-labs/openeye-releases`; GitHub Pages serves it. Never rotate
+the repository key (`keystore.p12` beside `config.yml`, both git-ignored in that folder) - clients
+that added the repo will refuse an index signed by a new key.
+
 ## After it is accepted
 
 F-Droid re-signs every APK with its own key, so the store build and the GitHub APK in
